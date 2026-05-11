@@ -206,24 +206,41 @@ export class UsersService {
         throw new BadRequestException('Invalid google session key');
       }
 
-      return this.prisma.user.updateMany({
+      const user = await this.prisma.user.findUnique({
         where: { id },
-        data: {
-          isOnline,
-          ...(!isOnline && { lastSeenAt: new Date() }),
-        } as any,
+        select: { latitude: true, longitude: true },
+      });
+      if (!user) throw new NotFoundException(`User with id ${id} not found.`);
+
+      return this.prisma.user.update({
+        where: { id },
+        data: this.buildPresenceUpdate(isOnline, user.latitude, user.longitude),
       });
     }
 
     this.assertPhoneNumber(phoneNumber);
 
-    return this.prisma.user.updateMany({
+    const user = await this.prisma.user.findUnique({
       where: { phoneNumber },
-      data: {
-        isOnline,
-        ...(!isOnline && { lastSeenAt: new Date() }),
-      } as any,
+      select: { latitude: true, longitude: true },
     });
+    if (!user) throw new NotFoundException(`User with phone ${phoneNumber} not found.`);
+
+    return this.prisma.user.update({
+      where: { phoneNumber },
+      data: this.buildPresenceUpdate(isOnline, user.latitude, user.longitude),
+    });
+  }
+
+  private buildPresenceUpdate(isOnline: boolean, latitude?: number | null, longitude?: number | null) {
+    return {
+      isOnline,
+      ...(!isOnline && {
+        lastSeenAt: new Date(),
+        ...(latitude !== null && latitude !== undefined && { lastLatitude: latitude }),
+        ...(longitude !== null && longitude !== undefined && { lastLongitude: longitude }),
+      }),
+    };
   }
 
   async sendPhoneVerificationCode(phoneNumber: string) {

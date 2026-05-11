@@ -28,6 +28,8 @@ model User {
   photoUrl            String?
   latitude            Float?
   longitude           Float?
+  lastLatitude        Float?
+  lastLongitude       Float?
   isOnline            Boolean   @default(false)
   lastSeenAt          DateTime?
   isRegistered        Boolean   @default(false)
