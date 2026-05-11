@@ -4,6 +4,7 @@ export class UpdateUserDto {
   gender?: string;
   about?: string;
   bio?: string;
+  status?: string;
   latitude?: number;
   longitude?: number;
   isRegistered?: boolean;

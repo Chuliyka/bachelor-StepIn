@@ -1,7 +1,8 @@
 import { AppButton } from '@/components/ui/app-button';
 import { AppTextField } from '@/components/ui/app-text-field';
+import { UserStatusSelector } from '@/components/profile/status-selector';
 import { SelectField } from '@/components/ui/select-field';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { BASE_URL } from '@/constants/api';
 import { fetchWithAuth } from '@/utils/fetchWithAuth';
@@ -32,6 +33,7 @@ type UserProfile = {
   birthDate: string | null;
   gender: string | null;
   about: string | null;
+  status: string | null;
   photoUrl: string | null;
   phoneNumber: string | null;
   interests: { interest: { id: number; name: string } }[];
@@ -59,7 +61,9 @@ export default function ProfileScreen({ scrollBottomInset }: ProfileScreenProps)
   const [refreshing, setRefreshing] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
   const [editName, setEditName] = useState('');
   const [editAbout, setEditAbout] = useState('');
   const [editGender, setEditGender] = useState<(typeof GENDER_OPTIONS)[number] | ''>('');
@@ -196,6 +200,34 @@ export default function ProfileScreen({ scrollBottomInset }: ProfileScreenProps)
     }
   };
 
+  const handleSelectStatus = async (status: string) => {
+    if (!phoneNumber) return;
+
+    try {
+      setSavingStatus(true);
+      const response = await fetchWithAuth(
+        `${BASE_URL}/users/by-phone?phoneNumber=${encodeURIComponent(phoneNumber)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message ?? 'Не вдалося змінити статус');
+      }
+
+      setUser((prev) => (prev ? { ...prev, ...data } : prev));
+      setStatusModalVisible(false);
+    } catch (e: any) {
+      Alert.alert('Помилка', e?.message ?? 'Не вдалося змінити статус');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
@@ -263,12 +295,14 @@ export default function ProfileScreen({ scrollBottomInset }: ProfileScreenProps)
           {user.name ?? 'Без імені'}{age !== null ? `, ${age}` : ''}
         </Text>
 
-        <View style={styles.statusRow}>
-          <Text style={styles.statusLabel}>Твій поточний статус:</Text>
-          <View style={styles.statusBubble}>
-            <Text style={styles.statusEmoji}>{user.statusEmoji?.trim() || '🛍️'}</Text>
-          </View>
-        </View>
+        <UserStatusSelector
+          value={user.status}
+          visible={statusModalVisible}
+          saving={savingStatus}
+          onOpen={() => setStatusModalVisible(true)}
+          onClose={() => setStatusModalVisible(false)}
+          onSelect={handleSelectStatus}
+        />
 
         {/* Stats */}
         <View style={styles.statsRow}>

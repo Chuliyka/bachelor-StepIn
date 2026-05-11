@@ -187,6 +187,7 @@ export class UsersService {
         ...(data.birthDate !== undefined && { birthDate: new Date(data.birthDate) }),
         ...(data.about !== undefined && ({ about: data.about } as any)),
         ...(data.bio !== undefined && { bio: data.bio }),
+        ...(data.status !== undefined && { status: data.status }),
         ...(data.latitude !== undefined && { latitude: data.latitude }),
         ...(data.longitude !== undefined && { longitude: data.longitude }),
         ...(data.isRegistered !== undefined && { isRegistered: data.isRegistered }),

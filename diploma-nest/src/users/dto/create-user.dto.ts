@@ -4,6 +4,7 @@ export class CreateUserDto {
   googleId?: string;
   appleId?: string;
   name?: string;
+  status?: string;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
 }
