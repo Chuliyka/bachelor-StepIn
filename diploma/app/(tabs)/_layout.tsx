@@ -1,27 +1,46 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useSegments } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useColorScheme, View } from 'react-native';
 
 const ACTIVE = '#C88CEB';
-const INACTIVE = '#D8BEEB';
+const INACTIVE_LIGHT = '#D8BEEB';
+const INACTIVE_DARK = '#F3E9FF';
 
-function CircleIcon({ focused, children }: { focused: boolean; children: React.ReactNode }) {
+function CircleIcon({
+  focused,
+  isDark,
+  children,
+}: {
+  focused: boolean;
+  isDark: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={[styles.circleBase, focused ? styles.circleActive : styles.circleInactive]}>
+    <View
+      style={[
+        styles.circleBase,
+        focused ? styles.circleActive : isDark ? styles.circleInactiveDark : styles.circleInactive,
+      ]}
+    >
       {children}
     </View>
   );
 }
 
 export default function TabsLayout() {
+  const colorScheme = useColorScheme();
+  const segments = useSegments() as readonly string[];
+  const isMapTab = segments.some((s) => s === 'map');
+  const darkTabChrome = colorScheme === 'dark' && isMapTab;
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
         tabBarActiveTintColor: ACTIVE,
-        tabBarInactiveTintColor: INACTIVE,
+        tabBarInactiveTintColor: darkTabChrome ? INACTIVE_DARK : INACTIVE_LIGHT,
         tabBarStyle: {
           position: 'absolute',
           left: 0,
@@ -45,7 +64,7 @@ export default function TabsLayout() {
         name="people"
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <CircleIcon focused={focused}>
+            <CircleIcon focused={focused} isDark={darkTabChrome}>
               <MaterialCommunityIcons name={focused ? 'account-group' : 'account-group-outline'} size={26} color={focused ? '#FFFFFF' : color} />
             </CircleIcon>
           ),
@@ -55,7 +74,7 @@ export default function TabsLayout() {
         name="chats"
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <CircleIcon focused={focused}>
+            <CircleIcon focused={focused} isDark={darkTabChrome}>
               <Ionicons name={focused ? 'chatbubble' : 'chatbubble-outline'} size={24} color={focused ? '#FFFFFF' : color} />
             </CircleIcon>
           ),
@@ -65,7 +84,7 @@ export default function TabsLayout() {
         name="map"
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <CircleIcon focused={focused}>
+            <CircleIcon focused={focused} isDark={darkTabChrome}>
               <Ionicons name={focused ? 'map' : 'map-outline'} size={24} color={focused ? '#FFFFFF' : color} />
             </CircleIcon>
           ),
@@ -75,7 +94,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <CircleIcon focused={focused}>
+            <CircleIcon focused={focused} isDark={darkTabChrome}>
               <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={focused ? '#FFFFFF' : color} />
             </CircleIcon>
           ),
@@ -85,7 +104,7 @@ export default function TabsLayout() {
         name="settings"
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <CircleIcon focused={focused}>
+            <CircleIcon focused={focused} isDark={darkTabChrome}>
               <Ionicons name="options-outline" size={24} color={focused ? '#FFFFFF' : color} />
             </CircleIcon>
           ),
@@ -107,6 +126,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.86)',
     borderWidth: 1,
     borderColor: '#E7D2F4',
+  },
+  circleInactiveDark: {
+    backgroundColor: 'rgba(38, 38, 42, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(200, 140, 235, 0.42)',
   },
   circleActive: {
     backgroundColor: ACTIVE,

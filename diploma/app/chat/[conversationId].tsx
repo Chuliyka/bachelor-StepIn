@@ -1,0 +1,509 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { createOptimisticOutgoingMessage, getMockChatThread } from '@/data/mock-chat-thread';
+import {
+  isOutgoingMessage,
+  LOCAL_CHAT_PARTICIPANT_ID,
+  type ChatMessageDto,
+  type ChatThreadHeaderDto,
+  type ChatThreadListEntry,
+} from '@/types/chat-thread';
+
+const ACTIVE_RING = '#D9B5F5';
+const SCREEN_BG = '#F5EFFB';
+
+export default function ChatConversationScreen() {
+  const insets = useSafeAreaInsets();
+  const rawId = useLocalSearchParams<{ conversationId: string }>().conversationId;
+  const conversationId = Array.isArray(rawId) ? rawId[0] : rawId ?? '';
+
+  const thread = useMemo(() => getMockChatThread(conversationId), [conversationId]);
+  const [draft, setDraft] = useState('');
+  const [extraEntries, setExtraEntries] = useState<ChatThreadListEntry[]>([]);
+  const listRef = useRef<FlatList<ChatThreadListEntry>>(null);
+
+  const entries = useMemo(() => {
+    if (!thread) return [];
+    return [...thread.entries, ...extraEntries];
+  }, [thread, extraEntries]);
+
+  useEffect(() => {
+    setExtraEntries([]);
+  }, [conversationId]);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/chats');
+  }, []);
+
+  const onChatOptionsPress = useCallback(() => {
+  }, []);
+
+  const onSendLocationPress = useCallback(() => {
+  }, []);
+
+  const appendOutgoing = useCallback(
+    (body: string) => {
+      if (!thread || !body.trim()) return;
+      const message = createOptimisticOutgoingMessage(thread.header.conversationId, body.trim());
+      setExtraEntries((prev) => [...prev, { kind: 'message', message }]);
+      setDraft('');
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      });
+    },
+    [thread],
+  );
+
+  const onSubmitDraft = useCallback(() => {
+    appendOutgoing(draft);
+  }, [appendOutgoing, draft]);
+
+  const isDraftEmpty = draft.trim().length === 0;
+
+  if (!thread) {
+    return (
+      <View style={[styles.notFoundRoot, { paddingTop: insets.top + 24 }]}>
+        <Text style={styles.notFoundTitle}>Чат не знайдено</Text>
+        <Pressable onPress={handleBack} style={styles.notFoundBtn}>
+          <Text style={styles.notFoundBtnText}>Назад до списку</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const { header } = thread;
+  const hasMessages = entries.length > 0;
+  const showStatus = Boolean(header.threadStatusRelativeLabel || header.threadStatusBody);
+
+  return (
+    <View style={styles.root}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <ChatHeader
+          header={header}
+          topInset={insets.top}
+          onBack={handleBack}
+          onOptionsPress={onChatOptionsPress}
+          showStatus={showStatus}
+        />
+
+        <FlatList
+          ref={listRef}
+          data={entries}
+          keyExtractor={(item) => (item.kind === 'timestamp' ? item.id : item.message.id)}
+          renderItem={({ item }) => <ThreadEntry item={item} header={header} />}
+          contentContainerStyle={[
+            styles.listContent,
+            !hasMessages && styles.listContentEmpty,
+            { paddingBottom: 16 },
+          ]}
+          ListEmptyComponent={
+            hasMessages ? null : (
+              <Text style={styles.emptyStateText}>У вас ще немає повідомлень</Text>
+            )
+          }
+          onContentSizeChange={() => {
+            if (hasMessages) listRef.current?.scrollToEnd({ animated: false });
+          }}
+          showsVerticalScrollIndicator={false}
+        />
+
+        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <View style={styles.inputRow}>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Надіслати повідомлення"
+              placeholderTextColor="#7C8B98"
+              style={styles.textInput}
+              multiline={false}
+              maxLength={4000}
+              returnKeyType="send"
+              blurOnSubmit={false}
+              onSubmitEditing={onSubmitDraft}
+            />
+            <Pressable
+              onPress={isDraftEmpty ? onSendLocationPress : onSubmitDraft}
+              style={styles.inputIconBtn}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={isDraftEmpty ? 'Надіслати локацію' : 'Надіслати повідомлення'}
+            >
+              {isDraftEmpty ? (
+                <MaterialCommunityIcons name="map-marker-outline" size={22} color="#FFFFFF" />
+              ) : (
+                <Ionicons name="paper-plane" size={20} color="#FFFFFF" marginRight={2} marginTop={2} />
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+function ChatHeader({
+  header,
+  topInset,
+  onBack,
+  onOptionsPress,
+  showStatus,
+}: {
+  header: ChatThreadHeaderDto;
+  topInset: number;
+  onBack: () => void;
+  onOptionsPress: () => void;
+  showStatus: boolean;
+}) {
+  return (
+    <View style={[styles.headerBlock, { paddingTop: topInset }]}>
+      <View style={styles.headerRow}>
+        <Pressable onPress={onBack} style={styles.headerIconBtn} hitSlop={12}>
+          <Ionicons name="chevron-back" size={28} color="#19395A" />
+        </Pressable>
+
+        <View style={styles.headerAvatarRing}>
+          {header.participantAvatarUrl ? (
+            <Image source={{ uri: header.participantAvatarUrl }} style={styles.headerAvatar} />
+          ) : (
+            <View style={[styles.headerAvatar, styles.headerAvatarFallback]}>
+              <Ionicons name="person" size={22} color="#FFFFFF" />
+            </View>
+          )}
+          <View style={styles.headerActivityBadge}>
+            <Text style={styles.headerActivityEmoji}>{header.activityStatusEmoji}</Text>
+          </View>
+        </View>
+
+        <View style={styles.headerTextBlock}>
+          <Text style={styles.headerName} numberOfLines={1}>
+            {header.participantDisplayName}
+          </Text>
+          {showStatus ? (
+            <Text style={styles.headerStatus} numberOfLines={2}>
+              <Text style={styles.headerStatusPrefix}>{header.threadStatusRelativeLabel}</Text>
+              <Text style={styles.headerStatusBody}> {header.threadStatusBody}</Text>
+            </Text>
+          ) : null}
+        </View>
+
+        <Pressable onPress={onOptionsPress} style={styles.headerIconBtn} hitSlop={12}>
+          <MaterialCommunityIcons name="dots-vertical" size={24} color="#19395A" />
+        </Pressable>
+      </View>
+      <View style={styles.headerDivider} />
+    </View>
+  );
+}
+
+function ThreadEntry({ item, header }: { item: ChatThreadListEntry; header: ChatThreadHeaderDto }) {
+  if (item.kind === 'timestamp') {
+    return (
+      <View style={styles.timestampWrap}>
+        <Text style={styles.timestampText}>{item.label}</Text>
+      </View>
+    );
+  }
+  return <MessageBubble message={item.message} peerAvatarUrl={header.participantAvatarUrl} />;
+}
+
+function MessageBubble({
+  message,
+  peerAvatarUrl,
+}: {
+  message: ChatMessageDto;
+  peerAvatarUrl: string | null;
+}) {
+  const outgoing = isOutgoingMessage(message, LOCAL_CHAT_PARTICIPANT_ID);
+
+  if (outgoing) {
+    return (
+      <View style={styles.msgRowOutgoing}>
+        <View style={styles.bubbleOutgoing}>
+          <Text style={styles.bubbleTextOutgoing}>{message.body}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const showAvatar = message.showAvatar === true;
+
+  return (
+    <View style={styles.msgRowIncoming}>
+      <View style={styles.avatarColumn}>
+        {showAvatar ? (
+          peerAvatarUrl ? (
+            <Image source={{ uri: peerAvatarUrl }} style={styles.msgAvatar} />
+          ) : (
+            <View style={[styles.msgAvatar, styles.msgAvatarFallback]}>
+              <Ionicons name="person" size={14} color="#FFFFFF" />
+            </View>
+          )
+        ) : (
+          <View style={styles.msgAvatarSpacer} />
+        )}
+      </View>
+      <View style={styles.bubbleIncoming}>
+        <Text style={styles.bubbleTextIncoming}>{message.body}</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: SCREEN_BG,
+  },
+  flex: {
+    flex: 1,
+  },
+  notFoundRoot: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+  },
+  notFoundTitle: {
+    fontFamily: 'Inter',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#19395A',
+    marginBottom: 16,
+  },
+  notFoundBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#F0E8FA',
+  },
+  notFoundBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#173753',
+  },
+  headerBlock: {
+    backgroundColor: 'transparent',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarRing: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: ACTIVE_RING,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  headerAvatarFallback: {
+    backgroundColor: '#9D8DF1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerActivityBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: ACTIVE_RING,
+  },
+  headerActivityEmoji: {
+    fontSize: 11,
+    lineHeight: 18,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 4,
+  },
+  headerName: {
+    fontFamily: 'Inter',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#19395A',
+  },
+  headerStatus: {
+    marginTop: 2,
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 15,
+  },
+  headerStatusPrefix: {
+    color: '#697C95',
+  },
+  headerStatusBody: {
+    color: '#77966D',
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: 'rgb(208, 209, 232)',
+    marginHorizontal: 16,
+    opacity: 0.9,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    flexGrow: 1,
+    backgroundColor: 'transparent',
+  },
+  listContentEmpty: {
+    justifyContent: 'center',
+  },
+  emptyStateText: {
+    textAlign: 'center',
+    fontFamily: 'Inter',
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#C9A8D8',
+    paddingHorizontal: 32,
+  },
+  timestampWrap: {
+    alignItems: 'center',
+    marginVertical: 14,
+  },
+  timestampText: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#9CA3AF',
+  },
+  msgRowOutgoing: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 10,
+  },
+  bubbleOutgoing: {
+    maxWidth: '80%',
+    backgroundColor: '#9D8DF1',
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  bubbleTextOutgoing: {
+    fontFamily: 'Inter',
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#FFFFFF',
+    lineHeight: 21,
+  },
+  msgRowIncoming: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 10,
+    maxWidth: '92%',
+  },
+  avatarColumn: {
+    width: 34,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginRight: 6,
+  },
+  msgAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  msgAvatarSpacer: {
+    width: 28,
+    height: 28,
+  },
+  msgAvatarFallback: {
+    backgroundColor: '#9D8DF1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bubbleIncoming: {
+    flexShrink: 1,
+    backgroundColor: '#E8EAEF',
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  bubbleTextIncoming: {
+    fontFamily: 'Inter',
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#173753',
+    lineHeight: 21,
+  },
+  inputBar: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E4E9F0',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: '#173753',
+    borderRadius: 26,
+    paddingLeft: 18,
+    paddingRight: 10,
+  },
+  textInput: {
+    flex: 1,
+    fontFamily: 'Inter',
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#173753',
+    maxHeight: 120,
+    paddingVertical: 10,
+  },
+  inputIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#9D8DF1',
+  },
+});

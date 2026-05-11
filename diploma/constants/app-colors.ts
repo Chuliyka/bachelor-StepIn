@@ -1,0 +1,11 @@
+export const AppColors = {
+  primary: '#9D8DF1',
+  navy: '#19395A',
+  textBody: '#25496E',
+  muted: '#6A8298',
+  placeholder: '#6F8599',
+  border: '#D6DCE3',
+  inputBg: '#F9FBFF',
+  white: '#FFFFFF',
+  tagBg: '#EDE8FF',
+} as const;

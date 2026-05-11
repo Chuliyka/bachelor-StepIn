@@ -1,11 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { BASE_URL } from '../../constants/api';
-import { fetchWithAuth } from '../../utils/fetchWithAuth';
-import { getSession } from '../../utils/session';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BASE_URL } from '@/constants/api';
+import { fetchWithAuth } from '@/utils/fetchWithAuth';
+import { getSession } from '@/utils/session';
 
 type UserMapData = {
   id: number | null;
@@ -23,6 +23,9 @@ type OnlineUserMarker = {
 };
 
 export default function MapTabScreen() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
   const { phoneNumber } = useLocalSearchParams<{ phoneNumber?: string }>();
   const mapRef = useRef<MapView | null>(null);
   const [sessionKey, setSessionKey] = useState<string | null>(null);
@@ -240,7 +243,7 @@ export default function MapTabScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       <MapView
         ref={(ref) => {
           mapRef.current = ref;
@@ -248,6 +251,7 @@ export default function MapTabScreen() {
         style={styles.map}
         initialRegion={initialRegion}
         onRegionChangeComplete={handleRegionChangeComplete}
+        userInterfaceStyle={Platform.OS === 'ios' ? (isDark ? 'dark' : 'light') : undefined}
       >
         {allVisibleMarkers.map((marker) => {
           const markerImageUri = marker.photoUrl ? `${BASE_URL}${marker.photoUrl}` : null;
@@ -282,7 +286,7 @@ export default function MapTabScreen() {
       </MapView>
 
       {!!errorText && !loading && (
-        <View style={styles.floatingInfo}>
+        <View style={[styles.floatingInfo, { top: insets.top + 12 }]}>
           <Text style={styles.floatingInfoText}>{errorText}</Text>
         </View>
       )}
@@ -292,7 +296,7 @@ export default function MapTabScreen() {
           <ActivityIndicator size="large" color="#C88CEB" />
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -301,12 +305,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  containerDark: {
+    backgroundColor: '#1C1C1E',
+  },
   map: {
     flex: 1,
   },
   floatingInfo: {
     position: 'absolute',
-    top: 16,
     left: 16,
     right: 16,
     paddingHorizontal: 12,

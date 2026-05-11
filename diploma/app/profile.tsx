@@ -1,9 +1,10 @@
+import { AppButton } from '@/components/ui/app-button';
+import { AppTextField } from '@/components/ui/app-text-field';
+import { SelectField } from '@/components/ui/select-field';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { BASE_URL } from '../constants/api';
-import { fetchWithAuth } from '../utils/fetchWithAuth';
-import { updatePresence } from '../utils/presence';
-import { clearSession } from '../utils/session';
+import { BASE_URL } from '@/constants/api';
+import { fetchWithAuth } from '@/utils/fetchWithAuth';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -18,7 +20,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -34,6 +35,9 @@ type UserProfile = {
   photoUrl: string | null;
   phoneNumber: string | null;
   interests: { interest: { id: number; name: string } }[];
+  meetsCount?: number;
+  friendsCount?: number;
+  statusEmoji?: string | null;
 };
 
 function calcAge(birthDate: string | null): number | null {
@@ -42,7 +46,13 @@ function calcAge(birthDate: string | null): number | null {
   return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
 }
 
-export default function ProfileScreen() {
+type ProfileScreenProps = {
+  scrollBottomInset?: number;
+};
+
+const DEFAULT_SCROLL_BOTTOM_INSET = 40;
+
+export default function ProfileScreen({ scrollBottomInset }: ProfileScreenProps) {
   const { phoneNumber } = useLocalSearchParams<{ phoneNumber: string }>();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,24 +86,6 @@ export default function ProfileScreen() {
     console.log('[Profile] Pull-to-refresh triggered — reloading user:', phoneNumber);
     setRefreshing(true);
     fetchUser(true);
-  };
-
-  const handleLogout = () => {
-    Alert.alert('Вийти', 'Ти впевнений, що хочеш вийти?', [
-      { text: 'Скасувати', style: 'cancel' },
-      {
-        text: 'Вийти',
-        style: 'destructive',
-        onPress: async () => {
-          if (phoneNumber) {
-            await updatePresence(phoneNumber, false);
-          }
-          await clearSession();
-          console.log('[Profile] Logged out');
-          router.replace('/');
-        },
-      },
-    ]);
   };
 
   const handleChangePhoto = async () => {
@@ -230,7 +222,10 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: scrollBottomInset ?? DEFAULT_SCROLL_BOTTOM_INSET },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9D8DF1" colors={['#9D8DF1']} />
@@ -240,21 +235,25 @@ export default function ProfileScreen() {
 
         {/* Avatar */}
         <View style={styles.avatarWrapper}>
-          <TouchableOpacity onPress={handleChangePhoto} activeOpacity={0.8} disabled={photoUploading}>
-            {photoUploading ? (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <ActivityIndicator color="#9D8DF1" />
-              </View>
-            ) : photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Text style={styles.avatarPlaceholderText}>
-                  {user.name ? user.name[0].toUpperCase() : '?'}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={styles.avatarRingPurple}>
+            <View style={styles.avatarRingWhite}>
+              <TouchableOpacity onPress={handleChangePhoto} activeOpacity={0.8} disabled={photoUploading}>
+                {photoUploading ? (
+                  <View style={[styles.avatarInner, styles.avatarPlaceholder]}>
+                    <ActivityIndicator color="#9D8DF1" />
+                  </View>
+                ) : photoUri ? (
+                  <Image source={{ uri: photoUri }} style={styles.avatarInner} />
+                ) : (
+                  <View style={[styles.avatarInner, styles.avatarPlaceholder]}>
+                    <Text style={styles.avatarPlaceholderText}>
+                      {user.name ? user.name[0].toUpperCase() : '?'}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
           <TouchableOpacity style={styles.editBadge} activeOpacity={0.8} onPress={handleChangePhoto} disabled={photoUploading}>
             <Text style={styles.editBadgeIcon}>✎</Text>
           </TouchableOpacity>
@@ -264,15 +263,22 @@ export default function ProfileScreen() {
           {user.name ?? 'Без імені'}{age !== null ? `, ${age}` : ''}
         </Text>
 
+        <View style={styles.statusRow}>
+          <Text style={styles.statusLabel}>Твій поточний статус:</Text>
+          <View style={styles.statusBubble}>
+            <Text style={styles.statusEmoji}>{user.statusEmoji?.trim() || '🛍️'}</Text>
+          </View>
+        </View>
+
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statValue}>{user.meetsCount ?? 0}</Text>
             <Text style={styles.statLabel}>зустрічі</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statValue}>{user.friendsCount ?? 0}</Text>
             <Text style={styles.statLabel}>друга</Text>
           </View>
           <View style={styles.statDivider} />
@@ -284,41 +290,38 @@ export default function ProfileScreen() {
 
         {/* Action buttons */}
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionButtonOutline} activeOpacity={0.8} onPress={openEditModal}>
-            <Text style={styles.actionButtonOutlineText}>Редагувати</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButtonFilled} activeOpacity={0.8}>
-            <Text style={styles.actionButtonFilledText}>Поділитись профілем</Text>
-          </TouchableOpacity>
+          <AppButton variant="outline" title="Редагувати" shape="pill" onPress={openEditModal} style={{ flex: 1 }} />
+          <AppButton variant="primary" title="Поділитись профілем" shape="pill" onPress={() => {}} style={{ flex: 1 }} />
         </View>
-
-        <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Вийти з акаунту</Text>
-        </TouchableOpacity>
 
         {/* About */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Про себе</Text>
-          <Text style={styles.sectionBody}>
-            {user.about ?? '—'}
-          </Text>
+          <Text style={styles.sectionBody}>{user.about ?? '—'}</Text>
         </View>
 
         <View style={styles.divider} />
 
         {/* Interests */}
-        {(user.interests?.length ?? 0) > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Мої інтереси</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Мої інтереси</Text>
+          {(user.interests?.length ?? 0) > 0 ? (
             <View style={styles.tagsRow}>
               {user.interests.map(({ interest }) => (
                 <View key={interest.id} style={styles.tag}>
-                  <Text style={styles.tagText}>{interest.name}</Text>
+                  <Text
+                    style={styles.tagText}
+                    {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
+                  >
+                    {interest.name}
+                  </Text>
                 </View>
               ))}
             </View>
-          </View>
-        )}
+          ) : (
+            <Text style={styles.interestsEmpty}>Ще немає обраних інтересів</Text>
+          )}
+        </View>
       </ScrollView>
 
       <Modal
@@ -327,91 +330,100 @@ export default function ProfileScreen() {
         animationType="fade"
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={() => setEditModalVisible(false)}>
-          <Pressable style={styles.modalCard} onPress={(event) => event.stopPropagation()}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            Keyboard.dismiss();
+            setEditModalVisible(false);
+          }}
+        >
+          <Pressable
+            style={styles.modalCard}
+            onPress={(event) => {
+              event.stopPropagation();
+              Keyboard.dismiss();
+            }}
+          >
             <Text style={styles.modalTitle}>Редагувати профіль</Text>
 
-            <Text style={styles.modalLabel}>{"Ім'я"}</Text>
-            <TextInput
+            <AppTextField
+              label={"Ім'я"}
               value={editName}
               onChangeText={setEditName}
-              style={styles.modalInput}
               placeholder="Введіть ім'я"
-              placeholderTextColor="#6F8599"
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
             />
 
-            <Text style={styles.modalLabel}>Про себе</Text>
-            <TextInput
+            <AppTextField
+              label="Про себе"
               value={editAbout}
               onChangeText={setEditAbout}
-              style={[styles.modalInput, styles.modalInputMultiline]}
               placeholder="Коротко про себе"
-              placeholderTextColor="#6F8599"
               multiline
-              textAlignVertical="top"
             />
 
-            <Text style={styles.modalLabel}>Стать</Text>
-            <TouchableOpacity style={styles.modalSelect} activeOpacity={0.8} onPress={openGenderPicker}>
-              <Text style={[styles.modalSelectText, !editGender && styles.modalSelectPlaceholder]}>
-                {editGender || 'Оберіть стать'}
-              </Text>
-            </TouchableOpacity>
+            <SelectField
+              label="Стать"
+              value={editGender}
+              placeholder="Оберіть стать"
+              onPress={openGenderPicker}
+            />
 
-            <Text style={styles.modalLabel}>Дата народження</Text>
-            <TouchableOpacity
-              style={styles.modalSelect}
-              activeOpacity={0.8}
+            <SelectField
+              label="Дата народження"
+              value={editBirthDate ? formatDate(editBirthDate) : ''}
+              placeholder="Оберіть дату"
               onPress={() => setShowBirthDatePicker(true)}
-            >
-              <Text style={[styles.modalSelectText, !editBirthDate && styles.modalSelectPlaceholder]}>
-                {editBirthDate ? formatDate(editBirthDate) : 'Оберіть дату'}
-              </Text>
-            </TouchableOpacity>
+            />
 
             {showBirthDatePicker && (
               <View style={styles.datePickerWrap}>
-                <DateTimePicker
-                  value={editBirthDate ?? new Date(2000, 0, 1)}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  maximumDate={new Date()}
-                  onChange={handleBirthDateChange}
-                />
+                <View style={styles.datePickerWheelSlot}>
+                  <DateTimePicker
+                    value={editBirthDate ?? new Date(2000, 0, 1)}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    maximumDate={new Date()}
+                    onChange={handleBirthDateChange}
+                    {...(Platform.OS === 'ios'
+                      ? {
+                          themeVariant: 'light' as const,
+                          textColor: '#19395A',
+                          style: styles.iosWheelPicker,
+                        }
+                      : {})}
+                  />
+                </View>
                 {Platform.OS === 'ios' && (
-                  <TouchableOpacity
-                    style={styles.datePickerDoneButton}
-                    onPress={() => setShowBirthDatePicker(false)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.datePickerDoneText}>Готово</Text>
-                  </TouchableOpacity>
+                  <View style={styles.datePickerDoneRow}>
+                    <TouchableOpacity
+                      style={styles.datePickerDoneButton}
+                      onPress={() => setShowBirthDatePicker(false)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.datePickerDoneText}>Готово</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             )}
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancelButton]}
-                activeOpacity={0.8}
+              <AppButton
+                variant="outline"
+                title="Скасувати"
                 onPress={() => setEditModalVisible(false)}
                 disabled={savingProfile}
-              >
-                <Text style={styles.modalCancelButtonText}>Скасувати</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalSaveButton]}
-                activeOpacity={0.8}
+                style={{ flex: 1 }}
+              />
+              <AppButton
+                variant="primary"
+                title="Зберегти"
                 onPress={handleSaveProfile}
-                disabled={savingProfile}
-              >
-                {savingProfile ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalSaveButtonText}>Зберегти</Text>
-                )}
-              </TouchableOpacity>
+                loading={savingProfile}
+                style={{ flex: 1 }}
+              />
             </View>
           </Pressable>
         </Pressable>
@@ -440,7 +452,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 32,
-    paddingBottom: 40,
   },
   title: {
     fontFamily: 'Space Grotesk',
@@ -448,17 +459,37 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: '#19395A',
     marginBottom: 24,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   avatarWrapper: {
     position: 'relative',
-    marginBottom: 12,
+    marginBottom: 16,
+    alignSelf: 'center',
+    width: 132,
+    height: 132,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: '#CF97EF',
+  avatarRingPurple: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: '#9D8DF1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarRingWhite: {
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarInner: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
   },
   avatarPlaceholder: {
     backgroundColor: '#EDE8FF',
@@ -472,34 +503,69 @@ const styles = StyleSheet.create({
   },
   editBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#CF97EF',
+    bottom: 2,
+    right: 2,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#9D8DF1',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   editBadgeIcon: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 19,
+    fontWeight: '600',
+    transform: [{ rotate: '100deg' }],
   },
   nameAge: {
     fontFamily: 'Space Grotesk',
     fontWeight: '600',
     fontSize: 22,
     color: '#19395A',
-    marginBottom: 20,
+    marginBottom: 12,
+    textAlign: 'center',
+    alignSelf: 'stretch',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 22,
+    paddingHorizontal: 8,
+  },
+  statusLabel: {
+    fontFamily: 'Inter',
+    fontSize: 15,
+    color: '#25496E',
+  },
+  statusBubble: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EDE8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusEmoji: {
+    fontSize: 20,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 24,
+    marginBottom: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
   },
   statItem: {
+    flex: 1,
     alignItems: 'center',
+    minWidth: 0,
   },
   statValue: {
     fontFamily: 'Space Grotesk',
@@ -514,59 +580,39 @@ const styles = StyleSheet.create({
   },
   statDivider: {
     width: 1,
-    height: 32,
-    backgroundColor: '#E2E2E2',
+    height: 36,
+    backgroundColor: '#E8E8E8',
   },
   actionsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 28,
-  },
-  actionButtonOutline: {
-    flex: 1,
-    height: 40,
-    borderRadius: 35,
-    borderWidth: 1,
-    borderColor: '#9D8DF1',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButtonOutlineText: {
-    fontFamily: 'Inter',
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#9D8DF1',
-  },
-  actionButtonFilled: {
-    flex: 1,
-    height: 40,
-    borderRadius: 35,
-    backgroundColor: '#CF97EF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButtonFilledText: {
-    fontFamily: 'Inter',
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
-    textAlign: 'center',
+    marginBottom: 24,
+    width: '100%',
+    alignSelf: 'stretch',
   },
   section: {
     width: '100%',
-    marginBottom: 16,
+    marginVertical: 5,
   },
   sectionTitle: {
     fontFamily: 'Space Grotesk',
     fontWeight: '700',
     fontSize: 18,
     color: '#19395A',
-    marginBottom: 8,
+    marginBottom: 10,
+    textAlign: 'left',
   },
   sectionBody: {
     fontFamily: 'Inter',
     fontSize: 15,
-    color: '#3A3A3A',
+    color: '#25496E',
+    lineHeight: 24,
+    textAlign: 'left',
+  },
+  interestsEmpty: {
+    fontFamily: 'Inter',
+    fontSize: 14,
+    color: '#6A8298',
     lineHeight: 22,
   },
   divider: {
@@ -584,27 +630,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#9D8DF1',
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tagText: {
     fontFamily: 'Inter',
     fontSize: 13,
+    lineHeight: 18,
     color: '#FFFFFF',
     fontWeight: '500',
-  },
-  logoutButton: {
-    marginTop: 8,
-    marginBottom: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FF4D4F',
-    alignItems: 'center',
-  },
-  logoutButtonText: {
-    color: '#FF4D4F',
-    fontSize: 15,
-    fontWeight: '600',
+    textAlign: 'center',
   },
   modalBackdrop: {
     flex: 1,
@@ -624,57 +660,37 @@ const styles = StyleSheet.create({
     color: '#19395A',
     marginBottom: 12,
   },
-  modalLabel: {
-    fontFamily: 'Inter',
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#19395A',
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#D6DCE3',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontFamily: 'Inter',
-    fontSize: 15,
-    color: '#19395A',
-    backgroundColor: '#F9FBFF',
-  },
-  modalInputMultiline: {
-    minHeight: 86,
-  },
-  modalSelect: {
-    borderWidth: 1,
-    borderColor: '#D6DCE3',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#F9FBFF',
-  },
-  modalSelectText: {
-    fontFamily: 'Inter',
-    fontSize: 15,
-    color: '#19395A',
-  },
-  modalSelectPlaceholder: {
-    color: '#6F8599',
-  },
   datePickerWrap: {
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#E4E9F0',
     borderRadius: 10,
-    paddingVertical: 4,
-    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+    backgroundColor: '#F2F2F7',
+    overflow: 'visible',
+    alignItems: 'center',
+  },
+  datePickerWheelSlot: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iosWheelPicker: {
+    height: 216,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 340,
+  },
+  datePickerDoneRow: {
+    width: '100%',
+    alignItems: 'flex-end',
+    paddingRight: 4,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   datePickerDoneButton: {
-    alignSelf: 'flex-end',
-    marginRight: 12,
-    marginBottom: 8,
-    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   datePickerDoneText: {
     fontFamily: 'Inter',
@@ -686,31 +702,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 18,
-  },
-  modalButton: {
-    flex: 1,
-    height: 42,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCancelButton: {
-    borderWidth: 1,
-    borderColor: '#9D8DF1',
-  },
-  modalCancelButtonText: {
-    fontFamily: 'Inter',
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#9D8DF1',
-  },
-  modalSaveButton: {
-    backgroundColor: '#9D8DF1',
-  },
-  modalSaveButtonText: {
-    fontFamily: 'Inter',
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
 });
