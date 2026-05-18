@@ -18,7 +18,6 @@ type SettingsRow = {
 };
 
 const SETTINGS_ROWS: SettingsRow[] = [
-  { key: 'account', label: 'Акаунт', icon: 'ion', ionName: 'person-outline' },
   { key: 'location', label: 'Локація', icon: 'mci', mciName: 'map-marker-outline' },
   { key: 'notifications', label: 'Сповіщення', icon: 'ion', ionName: 'notifications-outline' },
   { key: 'security', label: 'Безпека', icon: 'ion', ionName: 'lock-closed-outline' },
@@ -60,7 +59,7 @@ export default function SettingsTabScreen() {
     }
     if (key === 'notifications') {
       router.push({
-        pathname: '/notifications',
+        pathname: '/notification-settings',
         ...(phoneNumber ? { params: { phoneNumber } } : {}),
       });
       return;
@@ -68,6 +67,13 @@ export default function SettingsTabScreen() {
     if (key === 'security') {
       router.push({
         pathname: '/security',
+        ...(phoneNumber ? { params: { phoneNumber } } : {}),
+      });
+      return;
+    }
+    if (key === 'language') {
+      router.push({
+        pathname: '/language-settings',
         ...(phoneNumber ? { params: { phoneNumber } } : {}),
       });
       return;

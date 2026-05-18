@@ -1,11 +1,19 @@
 import { AppColors } from '@/constants/app-colors';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  getMapSortGridRowCategories,
+  MAP_SORT_GRID_ROWS,
+  type InterestCategory,
+  type MapSortFilterKey,
+} from '@/constants/interests';
+import type { ReactNode } from 'react';
+import { Modal, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-export type MapSortFilterKey = 'all' | 'sport' | 'coffee';
+const TAB_BAR_CLEARANCE = 42;
+const SHEET_BOTTOM_PADDING = 0;
+const CARD_ROW_HEIGHT = 108;
+const GRID_ROW_GAP = 10;
 
-const TAB_BAR_OFFSET = 78 + 18;
+export type { MapSortFilterKey };
 
 export type MapSortFilterBottomSheetProps = {
   visible: boolean;
@@ -15,6 +23,64 @@ export type MapSortFilterBottomSheetProps = {
   onSelectKey: (key: MapSortFilterKey) => void;
 };
 
+type SortFilterCardProps = {
+  selected: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+};
+
+function SortFilterCard({
+  selected,
+  onPress,
+  accessibilityLabel,
+  style,
+  children,
+}: SortFilterCardProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.card,
+        style,
+        selected ? styles.cardSelected : styles.cardIdle,
+        pressed && styles.cardPressed,
+      ]}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+function InterestCategoryCard({
+  category,
+  selected,
+  onPress,
+}: {
+  category: InterestCategory;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <SortFilterCard
+      selected={selected}
+      onPress={onPress}
+      accessibilityLabel={category.name}
+    >
+      <Text style={styles.emoji}>{category.emoji}</Text>
+      <Text style={[styles.cardLabel, selected && styles.cardLabelSelected]}>{category.label}</Text>
+    </SortFilterCard>
+  );
+}
+
+function GridRow({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  return <View style={[styles.gridRow, style]}>{children}</View>;
+}
+
 export function MapSortFilterBottomSheet({
   visible,
   onClose,
@@ -22,63 +88,63 @@ export function MapSortFilterBottomSheet({
   selectedKey,
   onSelectKey,
 }: MapSortFilterBottomSheetProps) {
-  const padBottom = bottomInset + TAB_BAR_OFFSET + 12;
+  const padBottom = bottomInset + TAB_BAR_CLEARANCE + SHEET_BOTTOM_PADDING;
+  const firstRowCategories = getMapSortGridRowCategories(MAP_SORT_GRID_ROWS[0]);
+  const allSelected = selectedKey === 'all';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" />
 
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <Text style={styles.title}>Сортування за статусами/інтересами</Text>
+        <View style={[styles.sheet, { paddingBottom: padBottom }]}>
+          <View style={styles.header}>
+            <View style={styles.handle} />
+            <Text style={styles.title}>
+              Сортування за статусами/{'\n'}інтересами
+            </Text>
+          </View>
 
-          <View style={[styles.row, { paddingBottom: padBottom }]}>
-            <Pressable
+          <GridRow>
+            <SortFilterCard
+              selected={allSelected}
               onPress={() => onSelectKey('all')}
-              style={({ pressed }) => [
-                styles.card,
-                selectedKey === 'all' ? styles.cardSelected : styles.cardIdle,
-                pressed && styles.cardPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: selectedKey === 'all' }}
               accessibilityLabel="Усі"
             >
-              <Ionicons name="people-outline" size={36} color={AppColors.primary} />
-              <Text style={styles.cardLabel}>Усі</Text>
-            </Pressable>
+              <Text style={[styles.allLabel, allSelected && styles.allLabelSelected]}>Усі</Text>
+            </SortFilterCard>
 
-            <Pressable
-              onPress={() => onSelectKey('sport')}
-              style={({ pressed }) => [
-                styles.card,
-                selectedKey === 'sport' ? styles.cardSelected : styles.cardIdle,
-                pressed && styles.cardPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: selectedKey === 'sport' }}
-              accessibilityLabel="Спорт та активність"
-            >
-              <MaterialCommunityIcons name="tennis-ball" size={38} color={AppColors.primary} />
-              <Text style={styles.cardLabel}>Спорт/активність</Text>
-            </Pressable>
+            {firstRowCategories.map((category) => (
+              <InterestCategoryCard
+                key={category.key}
+                category={category}
+                selected={selectedKey === category.key}
+                onPress={() => onSelectKey(category.key)}
+              />
+            ))}
+          </GridRow>
 
-            <Pressable
-              onPress={() => onSelectKey('coffee')}
-              style={({ pressed }) => [
-                styles.card,
-                selectedKey === 'coffee' ? styles.cardSelected : styles.cardIdle,
-                pressed && styles.cardPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: selectedKey === 'coffee' }}
-              accessibilityLabel="Кава та перекус"
-            >
-              <Ionicons name="cafe-outline" size={36} color={AppColors.primary} />
-              <Text style={styles.cardLabel}>Кава/перекус</Text>
-            </Pressable>
-          </View>
+          {MAP_SORT_GRID_ROWS.slice(1).map((rowKeys, rowIndex) => {
+            const categories = getMapSortGridRowCategories(rowKeys);
+
+            return (
+              <GridRow key={`sort-row-${rowIndex}`} style={styles.gridRowSpacing}>
+                {categories.map((category) => (
+                  <InterestCategoryCard
+                    key={category.key}
+                    category={category}
+                    selected={selectedKey === category.key}
+                    onPress={() => onSelectKey(category.key)}
+                  />
+                ))}
+                {categories.length < 3
+                  ? Array.from({ length: 3 - categories.length }).map((_, spacerIndex) => (
+                      <View key={`spacer-${rowIndex}-${spacerIndex}`} style={styles.gridSpacer} />
+                    ))
+                  : null}
+              </GridRow>
+            );
+          })}
         </View>
       </View>
     </Modal>
@@ -98,8 +164,11 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingHorizontal: 16,
   },
+  header: {
+    alignItems: 'center',
+    paddingBottom: 16,
+  },
   handle: {
-    alignSelf: 'center',
     width: 64,
     height: 6,
     borderRadius: 3,
@@ -112,24 +181,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#19395A',
     textAlign: 'center',
-    marginBottom: 20,
     paddingHorizontal: 8,
     lineHeight: 24,
   },
-  row: {
+  gridRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: GRID_ROW_GAP,
     alignItems: 'stretch',
+  },
+  gridRowSpacing: {
+    marginTop: GRID_ROW_GAP,
+  },
+  gridSpacer: {
+    flex: 1,
+    minWidth: 0,
   },
   card: {
     flex: 1,
-    minHeight: 108,
+    minHeight: CARD_ROW_HEIGHT,
+    minWidth: 0,
     borderRadius: 16,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     backgroundColor: '#FAFBFF',
   },
   cardIdle: {
@@ -142,6 +218,21 @@ const styles = StyleSheet.create({
   cardPressed: {
     opacity: 0.92,
   },
+  allLabel: {
+    fontFamily: 'Inter',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#25496E',
+    textAlign: 'center',
+  },
+  allLabelSelected: {
+    color: AppColors.primary,
+  },
+  emoji: {
+    fontSize: 36,
+    lineHeight: 42,
+    textAlign: 'center',
+  },
   cardLabel: {
     marginTop: 10,
     fontFamily: 'Inter',
@@ -150,5 +241,8 @@ const styles = StyleSheet.create({
     color: '#25496E',
     textAlign: 'center',
     lineHeight: 16,
+  },
+  cardLabelSelected: {
+    color: AppColors.primary,
   },
 });

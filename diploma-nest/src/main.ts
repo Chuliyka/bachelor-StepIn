@@ -2,8 +2,9 @@ import { config } from 'dotenv';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { existsSync } from 'fs';
-import { join, resolve } from 'path';
+import { resolve } from 'path';
 import { AppModule } from './app.module';
+import { ensureUploadsDir, UPLOADS_DIR } from './paths';
 
 const envCandidates = [
   resolve(process.cwd(), '.env'),
@@ -19,8 +20,9 @@ if (dotenvResult.error) {
 }
 
 async function bootstrap() {
+  ensureUploadsDir();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useStaticAssets(join(__dirname, '..', '..', 'uploads'), { prefix: '/uploads' });
+  app.useStaticAssets(UPLOADS_DIR, { prefix: '/uploads' });
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

@@ -56,6 +56,9 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="location-settings" options={{ headerShown: false }} />
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
+          <Stack.Screen name="notification-settings" options={{ headerShown: false }} />
+          <Stack.Screen name="language-settings" options={{ headerShown: false }} />
+          <Stack.Screen name="blacklist" options={{ headerShown: false }} />
           <Stack.Screen name="security" options={{ headerShown: false }} />
           <Stack.Screen name="chat/[conversationId]" options={{ headerShown: false }} />
           <Stack.Screen name="profile" options={{ headerShown: false }} />
