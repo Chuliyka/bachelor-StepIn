@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname } from 'path';
+import { UPLOADS_DIR } from '../paths';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SaveInterestsDto } from './dto/save-interests.dto';
@@ -74,7 +75,7 @@ export class UsersController {
   @UseInterceptors(
     FileInterceptor('photo', {
       storage: diskStorage({
-        destination: join(__dirname, '..', '..', 'uploads'),
+        destination: UPLOADS_DIR,
         filename: (_req, file, cb) => {
           const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
           cb(null, unique + extname(file.originalname));

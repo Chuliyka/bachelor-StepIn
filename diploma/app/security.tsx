@@ -2,16 +2,41 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const PURPLE = '#9D8DF1';
-const PURPLE_TRACK = '#D4C4F5';
+const PURPLE_LIGHT = '#D4C4F5';
 const NAVY = '#19395A';
 const BODY = '#25496E';
+const MUTED = '#6A8298';
 const ROW_TITLE = '#173753';
 const BORDER = '#E4E9F0';
 const DANGER = '#FF1F3D';
+
+const ICON_COL = 48;
+
+function AppSwitch({ value, onValueChange }: { value: boolean; onValueChange: (next: boolean) => void }) {
+  return (
+    <Switch
+      value={value}
+      onValueChange={onValueChange}
+      trackColor={{ false: '#E0E0E0', true: PURPLE_LIGHT }}
+      thumbColor={value ? PURPLE : '#F4F4F4'}
+      ios_backgroundColor="#E0E0E0"
+    />
+  );
+}
 
 export default function SecurityScreen() {
   const [incognitoEnabled, setIncognitoEnabled] = useState(true);
@@ -23,11 +48,7 @@ export default function SecurityScreen() {
   };
 
   const handleBlacklistPress = () => {
-    Alert.alert('Незабаром', 'Чорний список ще в розробці.');
-  };
-
-  const handleDeleteAccount = () => {
-    setDeleteModalVisible(true);
+    router.push('/blacklist');
   };
 
   const handleConfirmDelete = () => {
@@ -35,22 +56,25 @@ export default function SecurityScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.body}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.headerWrap}>
-            <Pressable onPress={handleBack} style={styles.backAbs} hitSlop={12}>
+          <View style={styles.headerRow}>
+            <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
               <Ionicons name="chevron-back" size={28} color={NAVY} />
             </Pressable>
-            <Text style={styles.pageTitle}>Безпека</Text>
+            <Text style={styles.headerTitle} numberOfLines={2}>
+              Безпека
+            </Text>
           </View>
 
-          <Text style={styles.subtitle}>Керуйте доступом, сесіями та приватністю</Text>
-          <View style={styles.headerDivider} />
+          <Text style={styles.pageSubtitle}>Керуйте доступом, сесіями та приватністю</Text>
+
+          <View style={styles.sectionDivider} />
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Режим інкогніто</Text>
@@ -58,37 +82,32 @@ export default function SecurityScreen() {
 
             <View style={styles.incognitoRow}>
               <View style={styles.iconCircle}>
-                <MaterialCommunityIcons name="eye-off-outline" size={25} color={PURPLE} />
+                <MaterialCommunityIcons name="eye-off-outline" size={22} color={PURPLE} />
               </View>
 
               <View style={styles.incognitoTextWrap}>
                 <Text style={styles.incognitoTitle}>Інкогніто</Text>
                 <Text style={styles.incognitoText}>
-                  У цьому режимі ваш профіль та активний статус приховані на карті. Ви також не зможете бачити людей поблизу
+                  У цьому режимі ваш профіль та активний статус приховані на карті. Ви також не зможете бачити
+                  людей поблизу
                 </Text>
               </View>
 
-              <Switch
-                value={incognitoEnabled}
-                onValueChange={setIncognitoEnabled}
-                trackColor={{ false: '#E0E0E0', true: PURPLE_TRACK }}
-                thumbColor="#FFFFFF"
-                ios_backgroundColor="#E0E0E0"
-              />
+              <AppSwitch value={incognitoEnabled} onValueChange={setIncognitoEnabled} />
             </View>
           </View>
 
-          <View style={styles.divider} />
+          <View style={styles.sectionDivider} />
 
-          <TouchableOpacity style={styles.blacklistRow} activeOpacity={0.65} onPress={handleBlacklistPress}>
-            <Text style={styles.blacklistTitle}>Чорний список</Text>
-            <Ionicons name="chevron-forward" size={28} color={NAVY} />
+          <TouchableOpacity style={styles.menuRow} activeOpacity={0.65} onPress={handleBlacklistPress}>
+            <Text style={styles.menuRowTitle}>Чорний список</Text>
+            <Ionicons name="chevron-forward" size={22} color={MUTED} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={styles.sectionDivider} />
         </ScrollView>
 
-        <TouchableOpacity style={styles.deleteButton} activeOpacity={0.65} onPress={handleDeleteAccount}>
+        <TouchableOpacity style={styles.deleteButton} activeOpacity={0.65} onPress={() => setDeleteModalVisible(true)}>
           <Text style={styles.deleteText}>Видалити акаунт</Text>
         </TouchableOpacity>
 
@@ -138,118 +157,114 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
     paddingTop: 26,
-    paddingBottom: 32,
+    paddingBottom: 24,
   },
-  headerWrap: {
-    minHeight: 44,
-    justifyContent: 'center',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
   },
-  backAbs: {
-    position: 'absolute',
-    left: -8,
-    top: 2,
-    zIndex: 1,
+  backBtn: {
+    marginLeft: -8,
     padding: 8,
+    marginRight: 4,
+    marginTop: 2,
   },
-  pageTitle: {
-    paddingHorizontal: 42,
-    fontFamily: 'Space Grotesk',
-    fontSize: 30,
-    fontWeight: '700',
-    color: NAVY,
-    textAlign: 'center',
-  },
-  subtitle: {
-    marginTop: 12,
-    fontFamily: 'Inter',
-    fontSize: 16,
-    lineHeight: 22,
-    color: BODY,
-  },
-  headerDivider: {
-    height: 1,
-    backgroundColor: BORDER,
-    marginTop: 18,
-  },
-  section: {
-    marginTop: 28,
-  },
-  sectionTitle: {
+  headerTitle: {
+    flex: 1,
+    flexShrink: 1,
     fontFamily: 'Space Grotesk',
     fontSize: 24,
     fontWeight: '700',
     color: NAVY,
+    lineHeight: 30,
   },
-  sectionHint: {
+  pageSubtitle: {
     marginTop: 10,
     fontFamily: 'Inter',
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 22,
     color: BODY,
   },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: BORDER,
+    marginTop: 24,
+    marginBottom: 24,
+  },
+  section: {
+    gap: 14,
+  },
+  sectionTitle: {
+    fontFamily: 'Space Grotesk',
+    fontSize: 18,
+    fontWeight: '700',
+    color: NAVY,
+  },
+  sectionHint: {
+    fontFamily: 'Inter',
+    fontSize: 14,
+    lineHeight: 20,
+    color: MUTED,
+  },
   incognitoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    marginTop: 28,
+    alignItems: 'flex-start',
+    gap: 14,
+    marginTop: 4,
   },
   iconCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: ICON_COL,
+    height: ICON_COL,
+    borderRadius: ICON_COL / 2,
     borderWidth: 1,
-    borderColor: '#E5DEFF',
+    borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFBFC',
   },
   incognitoTextWrap: {
     flex: 1,
     minWidth: 0,
+    paddingTop: 2,
   },
   incognitoTitle: {
     fontFamily: 'Inter',
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
     color: ROW_TITLE,
   },
   incognitoText: {
     marginTop: 6,
     fontFamily: 'Inter',
-    fontSize: 16,
-    lineHeight: 22,
-    color: BODY,
+    fontSize: 13,
+    lineHeight: 20,
+    color: MUTED,
+    textAlign: 'left',
   },
-  divider: {
-    height: 1,
-    backgroundColor: BORDER,
-    marginTop: 26,
-  },
-  blacklistRow: {
-    minHeight: 62,
+  menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
+    paddingVertical: 4,
   },
-  blacklistTitle: {
-    flex: 1,
-    fontFamily: 'Space Grotesk',
-    fontSize: 24,
-    fontWeight: '700',
-    color: NAVY,
+  menuRowTitle: {
+    fontFamily: 'Inter',
+    fontSize: 16,
+    fontWeight: '600',
+    color: ROW_TITLE,
   },
   deleteButton: {
     alignSelf: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginBottom: 12,
+    paddingVertical: 18,
+    marginBottom: 8,
   },
   deleteText: {
     fontFamily: 'Inter',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '500',
     color: DANGER,
   },

@@ -1,22 +1,11 @@
+import { INTEREST_CATEGORY_NAMES } from '@/constants/interests';
 import { router, useLocalSearchParams } from 'expo-router';
-import { BASE_URL } from '../constants/api';
-import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BASE_URL } from '../constants/api';
 
 const MAX_SELECTED = 5;
-
-const INTERESTS = [
-  'Спорт',
-  '🎾 Теніс / Бадмінтон',
-  '🏃 Біг',
-  '🚲 Велопрогулянки',
-  '🧘 Йога / Пілатес',
-  '🛹 Скейтбординг / Ролики',
-  '🏐 Волейбол / Футбол',
-  '🏋️ Фітнес / Зал',
-];
 
 export default function InterestsScreen() {
   const { phoneNumber } = useLocalSearchParams<{ phoneNumber: string }>();
@@ -78,7 +67,7 @@ export default function InterestsScreen() {
       </Text>
 
       <View style={styles.list}>
-        {INTERESTS.map((interest) => (
+        {INTEREST_CATEGORY_NAMES.map((interest) => (
           <TouchableOpacity
             key={interest}
             style={[styles.item, selectedInterests.includes(interest) && styles.itemActive]}

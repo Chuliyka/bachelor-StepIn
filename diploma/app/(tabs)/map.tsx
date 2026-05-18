@@ -16,10 +16,8 @@ import MapView, { Marker, Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BASE_URL } from '@/constants/api';
 import { AppColors } from '@/constants/app-colors';
-import {
-  MapSortFilterBottomSheet,
-  type MapSortFilterKey,
-} from '@/components/map/MapSortFilterBottomSheet';
+import { MapSortFilterBottomSheet } from '@/components/map/MapSortFilterBottomSheet';
+import { getInterestNameByFilterKey, type MapSortFilterKey } from '@/constants/interests';
 import { MapUserProfileBottomSheet } from '@/components/map/MapUserProfileBottomSheet';
 import type { MapUserFriendRequestStatus } from '@/types/map-user-profile-sheet';
 import { fetchWithAuth } from '@/utils/fetchWithAuth';
@@ -362,7 +360,12 @@ export default function MapTabScreen() {
   }, [fallbackCoords, userMapData]);
 
   const allVisibleMarkers = useMemo(() => {
-    const markers = [...onlineUsers];
+    const interestFilterName = getInterestNameByFilterKey(mapSortFilterKey);
+    const markers = onlineUsers.filter((marker) => {
+      if (!interestFilterName) return true;
+      const interests = marker.interests ?? [];
+      return interests.some(({ interest }) => interest.name === interestFilterName);
+    });
 
     if (markerCoords && !markers.some((m) => m.id === userMapData?.id)) {
       markers.push({
@@ -375,7 +378,7 @@ export default function MapTabScreen() {
     }
 
     return markers;
-  }, [markerCoords, onlineUsers, userMapData?.id, userMapData?.photoUrl]);
+  }, [mapSortFilterKey, markerCoords, onlineUsers, userMapData?.id, userMapData?.photoUrl]);
 
   const initialRegion = useMemo(() => {
     if (markerCoords) {
