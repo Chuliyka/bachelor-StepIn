@@ -25,7 +25,12 @@ import type { MapUserFriendRequestStatus } from '@/types/map-user-profile-sheet'
 import { fetchWithAuth } from '@/utils/fetchWithAuth';
 import { buildMapUserProfileSheetFromMarker } from '@/utils/mapUserProfileSheet';
 import { clusterMapMarkers, type MapMarkerCluster } from '@/utils/mapMarkerClustering';
-import { mapMarkersSignature, parseUsersMapResponse, type MapMarkerDto } from '@/utils/mapApi';
+import {
+  buildMapUsersQuery,
+  mapMarkersSignature,
+  parseUsersMapResponse,
+  type MapMarkerDto,
+} from '@/utils/mapApi';
 import { markerMatchesStatusFilter } from '@/utils/mapStatusFilter';
 import { openChatWithParticipant } from '@/utils/openChat';
 import { getSession } from '@/utils/session';
@@ -113,6 +118,7 @@ export default function MapTabScreen() {
   const [fallbackCoords, setFallbackCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [errorText, setErrorText] = useState('');
   const [regionDelta, setRegionDelta] = useState(0.02);
+  const [mapRegion, setMapRegion] = useState<Region | null>(null);
   const debouncedRegionDelta = useDebouncedValue(regionDelta, REGION_DELTA_DEBOUNCE_MS);
   const [selectedUser, setSelectedUser] = useState<OnlineUserMarker | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -215,7 +221,23 @@ export default function MapTabScreen() {
 
   const loadMapMarkers = useCallback(async () => {
     try {
-      const response = await fetchWithAuth(`${BASE_URL}/map/users`);
+      const centerCoords = userMapData
+        ? { latitude: userMapData.latitude, longitude: userMapData.longitude }
+        : fallbackCoords;
+      const queryRegion =
+        mapRegion ??
+        (centerCoords
+          ? {
+              latitude: centerCoords.latitude,
+              longitude: centerCoords.longitude,
+              latitudeDelta: 0.02,
+              longitudeDelta: 0.02,
+            }
+          : null);
+      const query = queryRegion ? buildMapUsersQuery(queryRegion) : '';
+      const response = await fetchWithAuth(
+        `${BASE_URL}/map/users${query ? `?${query}` : ''}`,
+      );
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -240,7 +262,7 @@ export default function MapTabScreen() {
     } catch (error) {
       console.warn('[Map] Failed to load map markers:', error);
     }
-  }, []);
+  }, [fallbackCoords, mapRegion, userMapData]);
 
   useEffect(() => {
     if (!sessionKey) return;
@@ -346,6 +368,7 @@ export default function MapTabScreen() {
 
   const handleRegionChangeComplete = useCallback((region: Region) => {
     setRegionDelta(region.latitudeDelta);
+    setMapRegion(region);
   }, []);
 
   const zoomToCluster = useCallback((cluster: MapMarkerCluster<OnlineUserMarker>) => {

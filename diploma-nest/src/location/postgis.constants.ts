@@ -1,0 +1,5 @@
+export const WGS84_SRID = 4326;
+
+export const DEFAULT_MAP_SEARCH_RADIUS_METERS = 50_000;
+
+export const MAX_MAP_SEARCH_RADIUS_METERS = 200_000;

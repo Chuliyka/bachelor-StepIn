@@ -30,6 +30,10 @@ model User {
   longitude           Float?
   lastLatitude        Float?
   lastLongitude       Float?
+  mapLatitude         Float?
+  mapLongitude        Float?
+  mapLastLatitude     Float?
+  mapLastLongitude    Float?
   locationAccuracy    String    @default("approximate")
   isOnline            Boolean   @default(false)
   lastSeenAt          DateTime?

@@ -3,11 +3,12 @@ import { createHash, randomInt } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { FriendshipStatus } from '../../generated/prisma/enums';
 import { AuthService } from '../auth/auth.service';
+import { isLocationAccuracyMode } from '../location/location.constants';
+import { LocationGeoService } from '../location/location-geo.service';
 import {
-  isLocationAccuracyMode,
-  LOCATION_ACCURACY_APPROXIMATE,
-} from '../location/location.constants';
-import { applyPlanarLaplaceObfuscation } from '../location/planar-laplace';
+  buildPublicMapCoordinates,
+  resolveLocationAccuracy,
+} from '../location/location-privacy';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -22,6 +23,7 @@ export class UsersService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly locationGeo: LocationGeoService,
     private readonly authService: AuthService,
   ) {}
 
@@ -103,37 +105,16 @@ export class UsersService {
     });
   }
 
-  async findForMap(viewerId: number) {
-    const [users, friendships] = await Promise.all([
-      this.prisma.user.findMany({
-        where: {
-          id: { not: viewerId },
-          OR: [
-            { AND: [{ latitude: { not: null } }, { longitude: { not: null } }] },
-            { AND: [{ lastLatitude: { not: null } }, { lastLongitude: { not: null } }] },
-          ],
-        },
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          photoUrl: true,
-          isOnline: true,
-          latitude: true,
-          longitude: true,
-          lastLatitude: true,
-          lastLongitude: true,
-          locationAccuracy: true,
-          lastSeenAt: true,
-          interests: {
-            select: {
-              interest: {
-                select: { id: true, name: true },
-              },
-            },
-          },
-        },
-      }),
+  async findForMap(
+    viewerId: number,
+    options?: {
+      centerLatitude?: number;
+      centerLongitude?: number;
+      radiusMeters?: number;
+    },
+  ) {
+    const [geoUsers, friendships] = await Promise.all([
+      this.locationGeo.findMapUsers(viewerId, options),
       this.prisma.friendship.findMany({
         where: {
           OR: [{ requesterId: viewerId }, { addresseeId: viewerId }],
@@ -145,6 +126,13 @@ export class UsersService {
         },
       }),
     ]);
+
+    const interestsByUserId = await this.loadInterestsByUserIds(geoUsers.map((user) => user.id));
+
+    const users = geoUsers.map((user) => ({
+      ...user,
+      interests: interestsByUserId.get(user.id) ?? [],
+    }));
 
     const friendIds: number[] = [];
     const incomingFromUserIds: number[] = [];
@@ -171,42 +159,32 @@ export class UsersService {
     }
 
     return {
-      users: users.map((user) => this.applyMapLocationPrivacy(user)),
+      users,
       friendIds,
       incomingFromUserIds,
       outgoingToUserIds,
     };
   }
 
-  private applyMapLocationPrivacy<
-    T extends {
-      latitude: number | null;
-      longitude: number | null;
-      lastLatitude: number | null;
-      lastLongitude: number | null;
-      locationAccuracy?: string | null;
-    },
-  >(user: T): T {
-    const accuracy = user.locationAccuracy ?? LOCATION_ACCURACY_APPROXIMATE;
-    if (accuracy !== LOCATION_ACCURACY_APPROXIMATE) {
-      return user;
+  private async loadInterestsByUserIds(userIds: number[]) {
+    const map = new Map<number, { interest: { id: number; name: string } }[]>();
+    if (userIds.length === 0) return map;
+
+    const rows = await this.prisma.userInterest.findMany({
+      where: { userId: { in: userIds } },
+      select: {
+        userId: true,
+        interest: { select: { id: true, name: true } },
+      },
+    });
+
+    for (const row of rows) {
+      const existing = map.get(row.userId) ?? [];
+      existing.push({ interest: row.interest });
+      map.set(row.userId, existing);
     }
 
-    let { latitude, longitude, lastLatitude, lastLongitude } = user;
-
-    if (latitude !== null && longitude !== null) {
-      const obfuscated = applyPlanarLaplaceObfuscation(latitude, longitude);
-      latitude = obfuscated.latitude;
-      longitude = obfuscated.longitude;
-    }
-
-    if (lastLatitude !== null && lastLongitude !== null) {
-      const obfuscated = applyPlanarLaplaceObfuscation(lastLatitude, lastLongitude);
-      lastLatitude = obfuscated.latitude;
-      lastLongitude = obfuscated.longitude;
-    }
-
-    return { ...user, latitude, longitude, lastLatitude, lastLongitude };
+    return map;
   }
 
   findOne(id: number) {
@@ -294,23 +272,49 @@ export class UsersService {
 
   async updateByPhone(phoneNumber: string, data: UpdateUserDto) {
     const user = await this.findUserByKey(phoneNumber);
+    const accuracy = resolveLocationAccuracy(
+      data.locationAccuracy ?? user.locationAccuracy,
+    );
+
+    const nextLatitude = data.latitude !== undefined ? data.latitude : user.latitude;
+    const nextLongitude = data.longitude !== undefined ? data.longitude : user.longitude;
+    const coordinatesTouched = data.latitude !== undefined || data.longitude !== undefined;
+    const accuracyTouched = data.locationAccuracy !== undefined;
+
+    const patch: Record<string, unknown> = {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.gender !== undefined && { gender: data.gender }),
+      ...(data.birthDate !== undefined && { birthDate: new Date(data.birthDate) }),
+      ...(data.about !== undefined && ({ about: data.about } as any)),
+      ...(data.bio !== undefined && { bio: data.bio }),
+      ...(data.status !== undefined && { status: data.status }),
+      ...(data.isRegistered !== undefined && { isRegistered: data.isRegistered }),
+      ...(data.locationAccuracy !== undefined && {
+        locationAccuracy: this.assertLocationAccuracy(data.locationAccuracy),
+      }),
+    };
+
+    if (coordinatesTouched) {
+      if (data.latitude !== undefined) patch.latitude = data.latitude;
+      if (data.longitude !== undefined) patch.longitude = data.longitude;
+    }
+
+    const shouldRefreshMapCoordinates =
+      (coordinatesTouched || accuracyTouched) &&
+      nextLatitude !== null &&
+      nextLatitude !== undefined &&
+      nextLongitude !== null &&
+      nextLongitude !== undefined;
+
+    if (shouldRefreshMapCoordinates) {
+      const mapCoordinates = buildPublicMapCoordinates(accuracy, nextLatitude, nextLongitude);
+      patch.mapLatitude = mapCoordinates.mapLatitude;
+      patch.mapLongitude = mapCoordinates.mapLongitude;
+    }
 
     return this.prisma.user.update({
       where: { id: user.id },
-      data: {
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.gender !== undefined && { gender: data.gender }),
-        ...(data.birthDate !== undefined && { birthDate: new Date(data.birthDate) }),
-        ...(data.about !== undefined && ({ about: data.about } as any)),
-        ...(data.bio !== undefined && { bio: data.bio }),
-        ...(data.status !== undefined && { status: data.status }),
-        ...(data.latitude !== undefined && { latitude: data.latitude }),
-        ...(data.longitude !== undefined && { longitude: data.longitude }),
-        ...(data.locationAccuracy !== undefined && {
-          locationAccuracy: this.assertLocationAccuracy(data.locationAccuracy),
-        }),
-        ...(data.isRegistered !== undefined && { isRegistered: data.isRegistered }),
-      },
+      data: patch,
     });
   }
 
@@ -327,13 +331,18 @@ export class UsersService {
 
       const user = await this.prisma.user.findUnique({
         where: { id },
-        select: { latitude: true, longitude: true },
+        select: { latitude: true, longitude: true, locationAccuracy: true },
       });
       if (!user) throw new NotFoundException(`User with id ${id} not found.`);
 
       return this.prisma.user.update({
         where: { id },
-        data: this.buildPresenceUpdate(isOnline, user.latitude, user.longitude),
+        data: this.buildPresenceUpdate(
+          isOnline,
+          user.latitude,
+          user.longitude,
+          user.locationAccuracy,
+        ),
       });
     }
 
@@ -341,13 +350,18 @@ export class UsersService {
 
     const user = await this.prisma.user.findUnique({
       where: { phoneNumber },
-      select: { latitude: true, longitude: true },
+      select: { latitude: true, longitude: true, locationAccuracy: true },
     });
     if (!user) throw new NotFoundException(`User with phone ${phoneNumber} not found.`);
 
     return this.prisma.user.update({
       where: { phoneNumber },
-      data: this.buildPresenceUpdate(isOnline, user.latitude, user.longitude),
+      data: this.buildPresenceUpdate(
+        isOnline,
+        user.latitude,
+        user.longitude,
+        user.locationAccuracy,
+      ),
     });
   }
 
@@ -358,15 +372,44 @@ export class UsersService {
     return value;
   }
 
-  private buildPresenceUpdate(isOnline: boolean, latitude?: number | null, longitude?: number | null) {
-    return {
-      isOnline,
-      ...(!isOnline && {
-        lastSeenAt: new Date(),
-        ...(latitude !== null && latitude !== undefined && { lastLatitude: latitude }),
-        ...(longitude !== null && longitude !== undefined && { lastLongitude: longitude }),
-      }),
+  private buildPresenceUpdate(
+    isOnline: boolean,
+    latitude?: number | null,
+    longitude?: number | null,
+    locationAccuracy?: string | null,
+  ) {
+    if (isOnline) {
+      return { isOnline: true };
+    }
+
+    const patch: Record<string, unknown> = {
+      isOnline: false,
+      lastSeenAt: new Date(),
     };
+
+    if (latitude !== null && latitude !== undefined) {
+      patch.lastLatitude = latitude;
+    }
+    if (longitude !== null && longitude !== undefined) {
+      patch.lastLongitude = longitude;
+    }
+
+    if (
+      latitude !== null &&
+      latitude !== undefined &&
+      longitude !== null &&
+      longitude !== undefined
+    ) {
+      const mapCoordinates = buildPublicMapCoordinates(
+        resolveLocationAccuracy(locationAccuracy),
+        latitude,
+        longitude,
+      );
+      patch.mapLastLatitude = mapCoordinates.mapLatitude;
+      patch.mapLastLongitude = mapCoordinates.mapLongitude;
+    }
+
+    return patch;
   }
 
   async sendPhoneVerificationCode(phoneNumber: string) {

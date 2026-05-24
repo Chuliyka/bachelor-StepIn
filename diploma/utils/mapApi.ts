@@ -113,6 +113,26 @@ export function parseUsersMapResponse(data: unknown): MapMarkerDto[] {
   return markers;
 }
 
+export type MapUsersQuery = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
+
+/** Viewport-based radius for PostGIS ST_DWithin (meters). */
+export function buildMapUsersQuery(region: MapUsersQuery): string {
+  const params = new URLSearchParams();
+  params.set('lat', String(region.latitude));
+  params.set('lng', String(region.longitude));
+  const radiusMeters = Math.min(
+    Math.round(Math.max(region.latitudeDelta, region.longitudeDelta) * 111_320 * 0.75),
+    200_000,
+  );
+  params.set('radiusMeters', String(Math.max(radiusMeters, 500)));
+  return params.toString();
+}
+
 export function mapMarkersSignature(
   markers: { id: number; latitude: number; longitude: number; isOnline: boolean; status?: string | null }[],
 ) {
