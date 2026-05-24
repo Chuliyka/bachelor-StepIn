@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomInt } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { FriendshipStatus } from '../../generated/prisma/enums';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -95,6 +96,74 @@ export class UsersService {
     return this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async findForMap(viewerId: number) {
+    const [users, friendships] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          id: { not: viewerId },
+          OR: [
+            { AND: [{ latitude: { not: null } }, { longitude: { not: null } }] },
+            { AND: [{ lastLatitude: { not: null } }, { lastLongitude: { not: null } }] },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          photoUrl: true,
+          isOnline: true,
+          latitude: true,
+          longitude: true,
+          lastLatitude: true,
+          lastLongitude: true,
+          lastSeenAt: true,
+          interests: {
+            select: {
+              interest: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.friendship.findMany({
+        where: {
+          OR: [{ requesterId: viewerId }, { addresseeId: viewerId }],
+        },
+        select: {
+          status: true,
+          requesterId: true,
+          addresseeId: true,
+        },
+      }),
+    ]);
+
+    const friendIds: number[] = [];
+    const incomingFromUserIds: number[] = [];
+    const outgoingToUserIds: number[] = [];
+
+    for (const friendship of friendships) {
+      const otherUserId =
+        friendship.requesterId === viewerId ? friendship.addresseeId : friendship.requesterId;
+
+      if (friendship.status === FriendshipStatus.ACCEPTED) {
+        friendIds.push(otherUserId);
+        continue;
+      }
+
+      if (friendship.status !== FriendshipStatus.PENDING) {
+        continue;
+      }
+
+      if (friendship.addresseeId === viewerId) {
+        incomingFromUserIds.push(friendship.requesterId);
+      } else {
+        outgoingToUserIds.push(otherUserId);
+      }
+    }
+
+    return { users, friendIds, incomingFromUserIds, outgoingToUserIds };
   }
 
   findOne(id: number) {

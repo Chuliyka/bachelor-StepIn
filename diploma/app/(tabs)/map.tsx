@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -12,18 +11,30 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import MapView, { Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BASE_URL } from '@/constants/api';
 import { AppColors } from '@/constants/app-colors';
+import { MapClusterMarker } from '@/components/map/MapClusterMarker';
 import { MapSortFilterBottomSheet } from '@/components/map/MapSortFilterBottomSheet';
+import { MapUserMarker } from '@/components/map/MapUserMarker';
 import { getInterestNameByFilterKey, type MapSortFilterKey } from '@/constants/interests';
 import { MapUserProfileBottomSheet } from '@/components/map/MapUserProfileBottomSheet';
 import type { MapUserFriendRequestStatus } from '@/types/map-user-profile-sheet';
 import { fetchWithAuth } from '@/utils/fetchWithAuth';
 import { buildMapUserProfileSheetFromMarker } from '@/utils/mapUserProfileSheet';
+import { clusterMapMarkers, type MapMarkerCluster } from '@/utils/mapMarkerClustering';
+import { mapMarkersSignature, parseUsersMapResponse, type MapMarkerDto } from '@/utils/mapApi';
 import { openChatWithParticipant } from '@/utils/openChat';
 import { getSession } from '@/utils/session';
+import { useDebouncedValue } from '@/utils/useDebouncedValue';
+
+/** latitudeDelta at/above this → merge overlapping users into count clusters. */
+const CLUSTER_ZOOM_THRESHOLD = 0.01;
+/** Fraction of visible map height used as cluster merge radius when zoomed out. */
+const CLUSTER_RADIUS_FACTOR = 0.14;
+const MAP_MARKERS_POLL_MS = 15_000;
+const REGION_DELTA_DEBOUNCE_MS = 150;
 
 type UserMapData = {
   id: number | null;
@@ -32,14 +43,7 @@ type UserMapData = {
   photoUrl: string | null;
 };
 
-type OnlineUserMarker = {
-  id: number;
-  latitude: number;
-  longitude: number;
-  photoUrl: string | null;
-  name: string | null;
-  isOnline?: boolean | null;
-  lastSeenAt?: string | null;
+type OnlineUserMarker = MapMarkerDto & {
   birthDate?: string | null;
   about?: string | null;
   statusEmoji?: string | null;
@@ -47,10 +51,6 @@ type OnlineUserMarker = {
   rating?: number | null;
   meetsCount?: number;
   friendsCount?: number;
-  interests?: { interest: { id: number; name: string } }[];
-  isFriend?: boolean | null;
-  friendRequestStatus?: MapUserFriendRequestStatus | null;
-  relationshipLabel?: string | null;
   statusRelativeLabel?: string | null;
 };
 
@@ -60,75 +60,8 @@ type FriendRelationship = {
   relationshipLabel: string;
 };
 
-type FriendUser = {
-  id?: number | null;
-};
-
-type FriendshipDto = {
-  id: number;
-  friend?: FriendUser | null;
-  requester?: FriendUser | null;
-  addressee?: FriendUser | null;
-};
-
-const DEFAULT_RELATIONSHIP: FriendRelationship = {
-  isFriend: false,
-  friendRequestStatus: 'none',
-  relationshipLabel: 'Не твій друг',
-};
-
-async function readJsonArray(response: Response) {
-  const data = await response.json().catch(() => []);
-  return Array.isArray(data) ? data : [];
-}
-
 function parseBackendBoolean(value: unknown) {
   return value === true || value === 'true' || value === 1 || value === '1';
-}
-
-function getFriendUserId(friendship: FriendshipDto) {
-  const id = Number(friendship.friend?.id);
-  return Number.isFinite(id) ? id : null;
-}
-
-function buildFriendRelationships(
-  friends: FriendshipDto[],
-  incomingRequests: FriendshipDto[],
-  outgoingRequests: FriendshipDto[],
-) {
-  const relationships = new Map<number, FriendRelationship>();
-
-  friends.forEach((friendship) => {
-    const userId = getFriendUserId(friendship);
-    if (userId === null) return;
-    relationships.set(userId, {
-      isFriend: true,
-      friendRequestStatus: 'none',
-      relationshipLabel: 'Твій друг',
-    });
-  });
-
-  incomingRequests.forEach((friendship) => {
-    const userId = getFriendUserId(friendship);
-    if (userId === null || relationships.has(userId)) return;
-    relationships.set(userId, {
-      isFriend: false,
-      friendRequestStatus: 'incoming',
-      relationshipLabel: 'Заявка отримана',
-    });
-  });
-
-  outgoingRequests.forEach((friendship) => {
-    const userId = getFriendUserId(friendship);
-    if (userId === null || relationships.has(userId)) return;
-    relationships.set(userId, {
-      isFriend: false,
-      friendRequestStatus: 'outgoing',
-      relationshipLabel: 'Заявка надіслана',
-    });
-  });
-
-  return relationships;
 }
 
 function mergeBackendUserIntoMarker(marker: OnlineUserMarker, user: any): OnlineUserMarker {
@@ -164,13 +97,16 @@ export default function MapTabScreen() {
   const insets = useSafeAreaInsets();
   const { phoneNumber } = useLocalSearchParams<{ phoneNumber?: string }>();
   const mapRef = useRef<MapView | null>(null);
+  const didAnimateToUserRef = useRef(false);
+  const markersSignatureRef = useRef('');
   const [sessionKey, setSessionKey] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [coordsLoading, setCoordsLoading] = useState(true);
   const [userMapData, setUserMapData] = useState<UserMapData | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUserMarker[]>([]);
   const [fallbackCoords, setFallbackCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [errorText, setErrorText] = useState('');
   const [regionDelta, setRegionDelta] = useState(0.02);
+  const debouncedRegionDelta = useDebouncedValue(regionDelta, REGION_DELTA_DEBOUNCE_MS);
   const [selectedUser, setSelectedUser] = useState<OnlineUserMarker | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sortFilterSheetVisible, setSortFilterSheetVisible] = useState(false);
@@ -218,12 +154,12 @@ export default function MapTabScreen() {
   const loadCoordinates = useCallback(async () => {
     if (!sessionKey) {
       setErrorText('Не знайдено сесію користувача.');
-      setLoading(false);
+      setCoordsLoading(false);
       return;
     }
 
     try {
-      setLoading(true);
+      setCoordsLoading(true);
       const response = await fetchWithAuth(
         `${BASE_URL}/users/by-phone?phoneNumber=${encodeURIComponent(sessionKey)}`,
       );
@@ -265,93 +201,46 @@ export default function MapTabScreen() {
         setErrorText(error?.message ?? 'Помилка завантаження координат');
       }
     } finally {
-      setLoading(false);
+      setCoordsLoading(false);
     }
   }, [loadDeviceLocation, sessionKey]);
 
-  useEffect(() => {
-    if (!sessionKey) return;
-    void loadCoordinates();
-  }, [sessionKey, loadCoordinates]);
-
-  const loadOnlineUsers = useCallback(async () => {
+  const loadMapMarkers = useCallback(async () => {
     try {
-      const [usersResponse, friendsResponse, incomingResponse, outgoingResponse] = await Promise.all([
-        fetchWithAuth(`${BASE_URL}/users`),
-        fetchWithAuth(`${BASE_URL}/friends`),
-        fetchWithAuth(`${BASE_URL}/friends/requests/incoming`),
-        fetchWithAuth(`${BASE_URL}/friends/requests/outgoing`),
-      ]);
+      const response = await fetchWithAuth(`${BASE_URL}/map/users`);
+      const data = await response.json().catch(() => ({}));
 
-      const data = await usersResponse.json().catch(() => []);
-
-      if (!usersResponse.ok || !Array.isArray(data)) {
-        throw new Error('Не вдалося завантажити онлайн-користувачів');
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.message === 'string' ? data.message : 'Не вдалося завантажити користувачів на карті',
+        );
       }
 
-      const relationships = buildFriendRelationships(
-        friendsResponse.ok ? await readJsonArray(friendsResponse) : [],
-        incomingResponse.ok ? await readJsonArray(incomingResponse) : [],
-        outgoingResponse.ok ? await readJsonArray(outgoingResponse) : [],
-      );
-
-      const online = data
-        .map((item: any) => {
-          const isOnline = parseBackendBoolean(item?.isOnline);
-          const rawLatitude = isOnline ? item?.latitude : item?.lastLatitude ?? item?.latitude;
-          const rawLongitude = isOnline ? item?.longitude : item?.lastLongitude ?? item?.longitude;
-          const latitude = Number(rawLatitude);
-          const longitude = Number(rawLongitude);
-          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-            return null;
-          }
-
-          const userId = Number(item.id);
-          const relationship = relationships.get(userId) ?? DEFAULT_RELATIONSHIP;
-
-          return {
-            id: userId,
-            latitude,
-            longitude,
-            photoUrl: typeof item?.photoUrl === 'string' ? item.photoUrl : null,
-            name: typeof item?.name === 'string' ? item.name : null,
-            isOnline,
-            lastSeenAt: typeof item?.lastSeenAt === 'string' ? item.lastSeenAt : null,
-            birthDate: typeof item?.birthDate === 'string' ? item.birthDate : null,
-            about: typeof item?.about === 'string' ? item.about : null,
-            statusEmoji: typeof item?.statusEmoji === 'string' ? item.statusEmoji : null,
-            statusBody: typeof item?.statusBody === 'string' ? item.statusBody : null,
-            rating: Number.isFinite(Number(item?.rating)) ? Number(item.rating) : null,
-            meetsCount: Number.isFinite(Number(item?.meetsCount)) ? Number(item.meetsCount) : undefined,
-            friendsCount: Number.isFinite(Number(item?.friendsCount)) ? Number(item.friendsCount) : undefined,
-            interests: Array.isArray(item?.interests) ? item.interests : undefined,
-            isFriend: relationship.isFriend,
-            friendRequestStatus: relationship.friendRequestStatus,
-            relationshipLabel: relationship.relationshipLabel,
-            statusRelativeLabel:
-              typeof item?.statusRelativeLabel === 'string' ? item.statusRelativeLabel : null,
-          } as OnlineUserMarker;
-        })
-        .filter((item: OnlineUserMarker | null): item is OnlineUserMarker => Boolean(item));
-
-      setOnlineUsers(online);
+      const markers = parseUsersMapResponse(data);
+      const signature = mapMarkersSignature(markers);
+      if (signature !== markersSignatureRef.current) {
+        markersSignatureRef.current = signature;
+        setOnlineUsers(markers);
+      }
     } catch (error) {
-      console.warn('[Map] Failed to load online users:', error);
+      console.warn('[Map] Failed to load map markers:', error);
     }
   }, []);
 
   useEffect(() => {
     if (!sessionKey) return;
 
-    void loadOnlineUsers();
+    void loadCoordinates();
+    void loadMapMarkers();
+
     const timer = setInterval(() => {
-      void loadOnlineUsers();
-    }, 8000);
+      void loadMapMarkers();
+    }, MAP_MARKERS_POLL_MS);
 
     return () => {
       clearInterval(timer);
     };
-  }, [loadOnlineUsers, sessionKey]);
+  }, [loadCoordinates, loadMapMarkers, sessionKey]);
 
   const markerCoords = useMemo(() => {
     if (userMapData) {
@@ -375,6 +264,11 @@ export default function MapTabScreen() {
         longitude: markerCoords.longitude,
         photoUrl: userMapData?.photoUrl ?? null,
         name: 'Ви',
+        isOnline: true,
+        lastSeenAt: null,
+        isFriend: false,
+        friendRequestStatus: 'none',
+        relationshipLabel: 'Ви',
       });
     }
 
@@ -400,8 +294,9 @@ export default function MapTabScreen() {
   }, [markerCoords]);
 
   useEffect(() => {
-    if (!markerCoords || !mapRef.current) return;
+    if (!markerCoords || !mapRef.current || didAnimateToUserRef.current) return;
 
+    didAnimateToUserRef.current = true;
     mapRef.current.animateToRegion(
       {
         latitude: markerCoords.latitude,
@@ -413,11 +308,63 @@ export default function MapTabScreen() {
     );
   }, [markerCoords]);
 
-  const showDotMarker = regionDelta >= 0.01;
+  const shouldClusterMarkers = debouncedRegionDelta >= CLUSTER_ZOOM_THRESHOLD;
 
-  const handleRegionChangeComplete = (region: Region) => {
+  const mapDisplayItems = useMemo(() => {
+    if (!shouldClusterMarkers) {
+      return allVisibleMarkers.map((marker) => ({ kind: 'single' as const, marker }));
+    }
+
+    const clusterRadius = debouncedRegionDelta * CLUSTER_RADIUS_FACTOR;
+    const clusters = clusterMapMarkers(allVisibleMarkers, clusterRadius);
+
+    return clusters.map((cluster) =>
+      cluster.count === 1
+        ? { kind: 'single' as const, marker: cluster.markers[0] }
+        : { kind: 'cluster' as const, cluster },
+    );
+  }, [allVisibleMarkers, debouncedRegionDelta, shouldClusterMarkers]);
+
+  const handleRegionChangeComplete = useCallback((region: Region) => {
     setRegionDelta(region.latitudeDelta);
-  };
+  }, []);
+
+  const zoomToCluster = useCallback((cluster: MapMarkerCluster<OnlineUserMarker>) => {
+    if (!mapRef.current || cluster.markers.length === 0) return;
+
+    const latitudes = cluster.markers.map((marker) => marker.latitude);
+    const longitudes = cluster.markers.map((marker) => marker.longitude);
+    const minLat = Math.min(...latitudes);
+    const maxLat = Math.max(...latitudes);
+    const minLng = Math.min(...longitudes);
+    const maxLng = Math.max(...longitudes);
+    const padding = 0.003;
+
+    mapRef.current.animateToRegion(
+      {
+        latitude: (minLat + maxLat) / 2,
+        longitude: (minLng + maxLng) / 2,
+        latitudeDelta: Math.max((maxLat - minLat) * 2 + padding, 0.006),
+        longitudeDelta: Math.max((maxLng - minLng) * 2 + padding, 0.006),
+      },
+      450,
+    );
+  }, []);
+
+  const markerPhotoUris = useMemo(() => {
+    const uris = new Map<number, string | null>();
+    for (const marker of allVisibleMarkers) {
+      uris.set(
+        marker.id,
+        marker.photoUrl
+          ? marker.photoUrl.startsWith('http')
+            ? marker.photoUrl
+            : `${BASE_URL}${marker.photoUrl}`
+          : null,
+      );
+    }
+    return uris;
+  }, [allVisibleMarkers]);
 
   const closeSheet = useCallback(() => {
     setSheetVisible(false);
@@ -541,12 +488,6 @@ export default function MapTabScreen() {
       if (marker.id === userMapData?.id) return;
 
       setSortFilterSheetVisible(false);
-
-      console.log('[Map] User marker pressed:', {
-        marker,
-        sheetProfile: buildMapUserProfileSheetFromMarker(marker, BASE_URL),
-      });
-
       setSelectedUser(marker);
       setSheetVisible(true);
 
@@ -558,12 +499,6 @@ export default function MapTabScreen() {
           }
 
           const detailedMarker = mergeBackendUserIntoMarker(marker, data);
-          console.log('[Map] User details loaded:', {
-            user: data,
-            marker: detailedMarker,
-            sheetProfile: buildMapUserProfileSheetFromMarker(detailedMarker, BASE_URL),
-          });
-
           setSelectedUser((current) => (current?.id === marker.id ? detailedMarker : current));
           setOnlineUsers((current) => current.map((user) => (user.id === marker.id ? detailedMarker : user)));
         })
@@ -572,6 +507,14 @@ export default function MapTabScreen() {
         });
     },
     [userMapData?.id],
+  );
+
+  const handleMarkerPressById = useCallback(
+    (markerId: number) => {
+      const marker = onlineUsers.find((user) => user.id === markerId);
+      if (marker) handleMarkerPress(marker);
+    },
+    [handleMarkerPress, onlineUsers],
   );
 
   return (
@@ -585,33 +528,31 @@ export default function MapTabScreen() {
         onRegionChangeComplete={handleRegionChangeComplete}
         userInterfaceStyle={Platform.OS === 'ios' ? (isDark ? 'dark' : 'light') : undefined}
       >
-        {allVisibleMarkers.map((marker) => {
-          const markerImageUri = marker.photoUrl ? `${BASE_URL}${marker.photoUrl}` : null;
+        {mapDisplayItems.map((item) => {
+          if (item.kind === 'cluster') {
+            const { cluster } = item;
+            return (
+              <MapClusterMarker
+                key={`user-cluster-${cluster.id}`}
+                id={cluster.id}
+                latitude={cluster.latitude}
+                longitude={cluster.longitude}
+                count={cluster.count}
+                onPress={() => zoomToCluster(cluster)}
+              />
+            );
+          }
+
+          const marker = item.marker;
           return (
-          <Marker
-            key={`user-marker-${marker.id}-${showDotMarker ? 'dot' : 'avatar'}`}
-            coordinate={{ latitude: marker.latitude, longitude: marker.longitude }}
-            tracksViewChanges
-            onPress={() => handleMarkerPress(marker)}
-          >
-            {showDotMarker ? (
-              <View style={styles.dotWrap}>
-                <View style={styles.dotCore} />
-              </View>
-            ) : (
-              <View style={styles.markerWrap}>
-                <View style={styles.avatarRingOnline}>
-                  {markerImageUri ? (
-                    <Image source={{ uri: markerImageUri }} style={styles.avatarImage} />
-                  ) : (
-                    <View style={styles.avatarFallback}>
-                      <Text style={styles.avatarFallbackText}>🙂</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-          </Marker>
+            <MapUserMarker
+              key={`user-marker-${marker.id}`}
+              id={marker.id}
+              latitude={marker.latitude}
+              longitude={marker.longitude}
+              photoUri={markerPhotoUris.get(marker.id) ?? null}
+              onPress={handleMarkerPressById}
+            />
           );
         })}
       </MapView>
@@ -643,15 +584,15 @@ export default function MapTabScreen() {
         </Pressable>
       </View>
 
-      {!!errorText && !loading && (
+      {!!errorText && !coordsLoading && (
         <View style={[styles.floatingInfo, { top: insets.top + 64 }]}>
           <Text style={styles.floatingInfoText}>{errorText}</Text>
         </View>
       )}
 
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#C88CEB" />
+      {coordsLoading && (
+        <View style={styles.coordsLoadingBadge}>
+          <ActivityIndicator size="small" color="#C88CEB" />
         </View>
       )}
 
@@ -732,67 +673,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6A8298',
   },
-  markerWrap: {
-    width: 72,
-    height: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarRing: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    borderWidth: 3,
-    borderColor: '#D49BF5',
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-  },
-  avatarRingOnline: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    borderWidth: 3,
-    borderColor: '#121212',
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#CFE4FF',
-  },
-  avatarFallbackText: {
-    fontSize: 22,
-  },
-  dotWrap: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(212, 155, 245, 0.28)',
-  },
-  dotCore: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#C88CEB',
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
-  },
-  loadingOverlay: {
+  coordsLoadingBadge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    top: 120,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
   },
 });
