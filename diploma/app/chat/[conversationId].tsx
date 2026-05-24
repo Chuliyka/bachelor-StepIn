@@ -33,6 +33,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import { encodeLocationMessage, LOCATION_MESSAGE_PREVIEW, parseLocationMessage } from '@/utils/chatLocationMessage';
+import { getCurrentLocationWithAlerts, openLocationInMaps } from '@/utils/getCurrentLocation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   isOutgoingMessage,
@@ -46,12 +49,14 @@ function createOptimisticOutgoingMessage(
   authorParticipantId: string,
   body: string,
 ): ChatMessageDto {
+  const location = parseLocationMessage(body);
   return {
     id: `local-${Date.now()}`,
     conversationId,
     authorParticipantId,
     body,
     createdAt: new Date().toISOString(),
+    ...(location && { location }),
   };
 }
 
@@ -213,8 +218,52 @@ export default function ChatConversationScreen() {
   const onChatOptionsPress = useCallback(() => {
   }, []);
 
+  const sendLocationMessage = useCallback(
+    async (coords: { latitude: number; longitude: number }) => {
+      if (!header || sending || !localAuthorId) return;
+
+      const conversationNumericId = Number(header.conversationId);
+      if (!Number.isInteger(conversationNumericId)) return;
+
+      const body = encodeLocationMessage(coords);
+      const optimistic = createOptimisticOutgoingMessage(header.conversationId, localAuthorId, body);
+      setEntries((prev) => mergeMessageIntoEntries(prev, optimistic));
+      scrollToLatest();
+      setSending(true);
+
+      try {
+        const saved = await sendChatMessage({ conversationId: conversationNumericId, text: body });
+        const userId = currentUserId ?? (await getCurrentUserId());
+        if (!userId) return;
+
+        const dto = mapApiMessageToDto(saved, userId);
+        setEntries((prev) => mergeMessageIntoEntries(prev, dto, optimistic.id));
+        scrollToLatest();
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Не вдалося надіслати локацію';
+        Alert.alert('Помилка', message);
+        setEntries((prev) =>
+          prev.filter((entry) => !(entry.kind === 'message' && entry.message.id === optimistic.id)),
+        );
+      } finally {
+        setSending(false);
+      }
+    },
+    [currentUserId, header, localAuthorId, scrollToLatest, sending],
+  );
+
   const onSendLocationPress = useCallback(() => {
-  }, []);
+    if (!header || sending) return;
+
+    void (async () => {
+      const result = await getCurrentLocationWithAlerts();
+      if (!result.ok) return;
+      await sendLocationMessage({
+        latitude: result.latitude,
+        longitude: result.longitude,
+      });
+    })();
+  }, [header, sendLocationMessage, sending]);
 
   const onSubmitDraft = useCallback(async () => {
     if (!header || !draft.trim() || sending || !localAuthorId) return;
@@ -438,6 +487,18 @@ function MessageBubble({
   localAuthorId: string;
 }) {
   const outgoing = isOutgoingMessage(message, localAuthorId);
+  const location = message.location ?? parseLocationMessage(message.body);
+
+  if (location) {
+    return (
+      <LocationMessageBubble
+        location={location}
+        outgoing={outgoing}
+        peerAvatarUrl={peerAvatarUrl}
+        showAvatar={message.showAvatar === true}
+      />
+    );
+  }
 
   if (outgoing) {
     return (
@@ -469,6 +530,76 @@ function MessageBubble({
       <View style={styles.bubbleIncoming}>
         <Text style={styles.bubbleTextIncoming}>{message.body}</Text>
       </View>
+    </View>
+  );
+}
+
+function LocationMessageBubble({
+  location,
+  outgoing,
+  peerAvatarUrl,
+  showAvatar,
+}: {
+  location: { latitude: number; longitude: number };
+  outgoing: boolean;
+  peerAvatarUrl: string | null;
+  showAvatar: boolean;
+}) {
+  const onOpenMaps = useCallback(() => {
+    openLocationInMaps(location.latitude, location.longitude);
+  }, [location.latitude, location.longitude]);
+
+  const mapCard = (
+    <Pressable
+      onPress={onOpenMaps}
+      style={[styles.locationCard, outgoing ? styles.locationCardOutgoing : styles.locationCardIncoming]}
+      accessibilityRole="button"
+      accessibilityLabel="Відкрити локацію на карті"
+    >
+      <MapView
+        style={styles.locationMap}
+        region={{
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008,
+        }}
+        scrollEnabled={false}
+        zoomEnabled={false}
+        pitchEnabled={false}
+        rotateEnabled={false}
+        pointerEvents="none"
+      >
+        <Marker coordinate={location} />
+      </MapView>
+      <Text
+        style={[styles.locationLabel, outgoing ? styles.locationLabelOutgoing : styles.locationLabelIncoming]}
+      >
+        {LOCATION_MESSAGE_PREVIEW}
+      </Text>
+    </Pressable>
+  );
+
+  if (outgoing) {
+    return <View style={styles.msgRowOutgoing}>{mapCard}</View>;
+  }
+
+  return (
+    <View style={styles.msgRowIncoming}>
+      <View style={styles.avatarColumn}>
+        {showAvatar ? (
+          peerAvatarUrl ? (
+            <Image source={{ uri: peerAvatarUrl }} style={styles.msgAvatar} />
+          ) : (
+            <View style={[styles.msgAvatar, styles.msgAvatarFallback]}>
+              <Ionicons name="person" size={14} color="#FFFFFF" />
+            </View>
+          )
+        ) : (
+          <View style={styles.msgAvatarSpacer} />
+        )}
+      </View>
+      {mapCard}
     </View>
   );
 }
@@ -710,5 +841,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#9D8DF1',
+  },
+  locationCard: {
+    maxWidth: '80%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  locationCardOutgoing: {
+    borderBottomRightRadius: 6,
+  },
+  locationCardIncoming: {
+    flexShrink: 1,
+    borderBottomLeftRadius: 6,
+  },
+  locationMap: {
+    width: 220,
+    height: 132,
+  },
+  locationLabel: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    fontWeight: '600',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  locationLabelOutgoing: {
+    color: '#FFFFFF',
+    backgroundColor: '#9D8DF1',
+  },
+  locationLabelIncoming: {
+    color: '#173753',
+    backgroundColor: '#E8EAEF',
   },
 });

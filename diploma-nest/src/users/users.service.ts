@@ -3,6 +3,11 @@ import { createHash, randomInt } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { FriendshipStatus } from '../../generated/prisma/enums';
 import { AuthService } from '../auth/auth.service';
+import {
+  isLocationAccuracyMode,
+  LOCATION_ACCURACY_APPROXIMATE,
+} from '../location/location.constants';
+import { applyPlanarLaplaceObfuscation } from '../location/planar-laplace';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -111,12 +116,14 @@ export class UsersService {
         select: {
           id: true,
           name: true,
+          status: true,
           photoUrl: true,
           isOnline: true,
           latitude: true,
           longitude: true,
           lastLatitude: true,
           lastLongitude: true,
+          locationAccuracy: true,
           lastSeenAt: true,
           interests: {
             select: {
@@ -163,7 +170,43 @@ export class UsersService {
       }
     }
 
-    return { users, friendIds, incomingFromUserIds, outgoingToUserIds };
+    return {
+      users: users.map((user) => this.applyMapLocationPrivacy(user)),
+      friendIds,
+      incomingFromUserIds,
+      outgoingToUserIds,
+    };
+  }
+
+  private applyMapLocationPrivacy<
+    T extends {
+      latitude: number | null;
+      longitude: number | null;
+      lastLatitude: number | null;
+      lastLongitude: number | null;
+      locationAccuracy?: string | null;
+    },
+  >(user: T): T {
+    const accuracy = user.locationAccuracy ?? LOCATION_ACCURACY_APPROXIMATE;
+    if (accuracy !== LOCATION_ACCURACY_APPROXIMATE) {
+      return user;
+    }
+
+    let { latitude, longitude, lastLatitude, lastLongitude } = user;
+
+    if (latitude !== null && longitude !== null) {
+      const obfuscated = applyPlanarLaplaceObfuscation(latitude, longitude);
+      latitude = obfuscated.latitude;
+      longitude = obfuscated.longitude;
+    }
+
+    if (lastLatitude !== null && lastLongitude !== null) {
+      const obfuscated = applyPlanarLaplaceObfuscation(lastLatitude, lastLongitude);
+      lastLatitude = obfuscated.latitude;
+      lastLongitude = obfuscated.longitude;
+    }
+
+    return { ...user, latitude, longitude, lastLatitude, lastLongitude };
   }
 
   findOne(id: number) {
@@ -263,6 +306,9 @@ export class UsersService {
         ...(data.status !== undefined && { status: data.status }),
         ...(data.latitude !== undefined && { latitude: data.latitude }),
         ...(data.longitude !== undefined && { longitude: data.longitude }),
+        ...(data.locationAccuracy !== undefined && {
+          locationAccuracy: this.assertLocationAccuracy(data.locationAccuracy),
+        }),
         ...(data.isRegistered !== undefined && { isRegistered: data.isRegistered }),
       },
     });
@@ -303,6 +349,13 @@ export class UsersService {
       where: { phoneNumber },
       data: this.buildPresenceUpdate(isOnline, user.latitude, user.longitude),
     });
+  }
+
+  private assertLocationAccuracy(value: string) {
+    if (!isLocationAccuracyMode(value)) {
+      throw new BadRequestException('locationAccuracy must be "precise" or "approximate".');
+    }
+    return value;
   }
 
   private buildPresenceUpdate(isOnline: boolean, latitude?: number | null, longitude?: number | null) {

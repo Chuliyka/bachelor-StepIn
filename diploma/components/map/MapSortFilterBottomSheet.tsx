@@ -101,7 +101,7 @@ export function MapSortFilterBottomSheet({
           <View style={styles.header}>
             <View style={styles.handle} />
             <Text style={styles.title}>
-              Сортування за статусами/{'\n'}інтересами
+              Фільтр за поточним{'\n'}статусом
             </Text>
           </View>
 

@@ -1,11 +1,12 @@
 export class UpdateUserDto {
   name?: string;
-  birthDate?: string; // ISO date string, e.g. "2000-05-20"
+  birthDate?: string;
   gender?: string;
   about?: string;
   bio?: string;
   status?: string;
   latitude?: number;
   longitude?: number;
+  locationAccuracy?: 'precise' | 'approximate';
   isRegistered?: boolean;
 }

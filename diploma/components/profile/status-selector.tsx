@@ -1,93 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import {
+  formatStatusValue,
+  parseStatusValue,
+  STATUS_GROUPS,
+  type StatusOption,
+} from '@/constants/statuses';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-export type StatusOption = {
-  emoji: string;
-  label: string;
-};
-
-type StatusGroup = {
-  title: string;
-  options: StatusOption[];
-};
-
-const STATUS_GROUPS: StatusGroup[] = [
-  {
-    title: '☕️ Відпочинок та напої',
-    options: [
-      { emoji: '☕️', label: 'П’ю каву' },
-      { emoji: '☕️', label: 'По каві?' },
-      { emoji: '💨', label: 'На перекур' },
-      { emoji: '🍷', label: 'Келих вина' },
-      { emoji: '🍹', label: 'На терасі' },
-    ],
-  },
-  {
-    title: '🍕 Їжа та смаколики',
-    options: [
-      { emoji: '🍔', label: 'Хочу смачно поїсти' },
-      { emoji: '🍦', label: 'Йду за морозивом' },
-    ],
-  },
-  {
-    title: '🎾 Спорт та активність',
-    options: [
-      { emoji: '🎾', label: 'Хто на теніс?' },
-      { emoji: '🏃‍♂️', label: 'На пробіжці' },
-      { emoji: '🚲', label: 'Велопрогулянка' },
-      { emoji: '🧘‍♂️', label: 'Йога на свіжому повітрі' },
-      { emoji: '🛹', label: 'Катаюсь на скейті/роликах' },
-      { emoji: '🛼', label: 'На роликах' },
-      { emoji: '🎱', label: 'Більярд' },
-    ],
-  },
-  {
-    title: '🚶‍♂️ Дозвілля та Lifestyle',
-    options: [
-      { emoji: '🚶‍♂️', label: 'Прогулянка в парку' },
-      { emoji: '🌳', label: 'Прогулянка в парку' },
-      { emoji: '🐕', label: 'Вигулюю собаку' },
-      { emoji: '🛍️', label: 'Шопінг' },
-      { emoji: '📸', label: 'Шукаю модель для фото' },
-    ],
-  },
-  {
-    title: '🎮 Розваги та хобі',
-    options: [
-      { emoji: '🎮', label: 'Шукаю тімейта (PS/PC)' },
-      { emoji: '🎬', label: 'Хочу в кіно' },
-      { emoji: '🎭', label: 'Хочу в театр' },
-      { emoji: '🎲', label: 'Настільні ігри' },
-    ],
-  },
-  {
-    title: '💻 Робота',
-    options: [
-      { emoji: '👨‍💻', label: 'Працюю в коворкінгу' },
-    ],
-  },
-];
-
-const DEFAULT_STATUS: StatusOption = { emoji: '🛍️', label: 'Шопінг' };
-
-export function formatStatusValue(option: StatusOption) {
-  return `${option.emoji} ${option.label}`;
-}
-
-function parseStatus(value?: string | null): StatusOption {
-  const normalized = value?.trim();
-  if (!normalized) return DEFAULT_STATUS;
-
-  const matched = STATUS_GROUPS.flatMap((group) => group.options).find(
-    (option) => formatStatusValue(option) === normalized,
-  );
-
-  if (matched) return matched;
-
-  const [emoji = DEFAULT_STATUS.emoji, ...labelParts] = normalized.split(' ');
-  const label = labelParts.join(' ').trim() || normalized;
-  return { emoji, label };
-}
+export type { StatusOption };
 
 export function UserStatusSelector({
   value,
@@ -104,7 +24,7 @@ export function UserStatusSelector({
   onClose: () => void;
   onSelect: (status: string) => void;
 }) {
-  const current = parseStatus(value);
+  const current = parseStatusValue(value);
 
   return (
     <>

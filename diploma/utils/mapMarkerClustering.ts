@@ -6,7 +6,6 @@ export type MapMarkerCluster<T extends { id: number; latitude: number; longitude
   markers: T[];
 };
 
-/** Groups nearby markers into clusters when their centers are within `radiusDegrees`. */
 export function clusterMapMarkers<T extends { id: number; latitude: number; longitude: number }>(
   markers: T[],
   radiusDegrees: number,

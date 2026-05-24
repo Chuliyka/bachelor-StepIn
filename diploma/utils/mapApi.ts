@@ -6,6 +6,7 @@ export type MapMarkerDto = {
   longitude: number;
   photoUrl: string | null;
   name: string | null;
+  status: string | null;
   isOnline: boolean;
   lastSeenAt: string | null;
   interests?: { interest: { id: number; name: string } }[];
@@ -77,37 +78,48 @@ export function parseUsersMapResponse(data: unknown): MapMarkerDto[] {
 
   const relationships = buildRelationshipMap(payload);
 
-  return payload.users
-    .map((item: Record<string, unknown>) => {
-      const isOnline = parseBackendBoolean(item?.isOnline);
-      const rawLatitude = isOnline ? item?.latitude : item?.lastLatitude ?? item?.latitude;
-      const rawLongitude = isOnline ? item?.longitude : item?.lastLongitude ?? item?.longitude;
-      const latitude = Number(rawLatitude);
-      const longitude = Number(rawLongitude);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        return null;
-      }
+  const markers: MapMarkerDto[] = [];
 
-      const userId = Number(item.id);
-      const relationship = relationships.get(userId) ?? DEFAULT_RELATIONSHIP;
+  for (const item of payload.users) {
+    const row = item as Record<string, unknown>;
+    const isOnline = parseBackendBoolean(row.isOnline);
+    const rawLatitude = isOnline ? row.latitude : row.lastLatitude ?? row.latitude;
+    const rawLongitude = isOnline ? row.longitude : row.lastLongitude ?? row.longitude;
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      continue;
+    }
 
-      return {
-        id: userId,
-        latitude,
-        longitude,
-        photoUrl: typeof item.photoUrl === 'string' ? item.photoUrl : null,
-        name: typeof item.name === 'string' ? item.name : null,
-        isOnline,
-        lastSeenAt: typeof item.lastSeenAt === 'string' ? item.lastSeenAt : null,
-        interests: Array.isArray(item.interests) ? item.interests : undefined,
-        isFriend: relationship.isFriend,
-        friendRequestStatus: relationship.friendRequestStatus,
-        relationshipLabel: relationship.relationshipLabel,
-      } satisfies MapMarkerDto;
-    })
-    .filter((item): item is MapMarkerDto => Boolean(item));
+    const userId = Number(row.id);
+    const relationship = relationships.get(userId) ?? DEFAULT_RELATIONSHIP;
+
+    markers.push({
+      id: userId,
+      latitude,
+      longitude,
+      photoUrl: typeof row.photoUrl === 'string' ? row.photoUrl : null,
+      name: typeof row.name === 'string' ? row.name : null,
+      status: typeof row.status === 'string' ? row.status : null,
+      isOnline,
+      lastSeenAt: typeof row.lastSeenAt === 'string' ? row.lastSeenAt : null,
+      interests: Array.isArray(row.interests) ? row.interests : undefined,
+      isFriend: relationship.isFriend,
+      friendRequestStatus: relationship.friendRequestStatus,
+      relationshipLabel: relationship.relationshipLabel,
+    });
+  }
+
+  return markers;
 }
 
-export function mapMarkersSignature(markers: { id: number; latitude: number; longitude: number; isOnline: boolean }[]) {
-  return markers.map((marker) => `${marker.id}:${marker.latitude}:${marker.longitude}:${marker.isOnline}`).join('|');
+export function mapMarkersSignature(
+  markers: { id: number; latitude: number; longitude: number; isOnline: boolean; status?: string | null }[],
+) {
+  return markers
+    .map(
+      (marker) =>
+        `${marker.id}:${marker.latitude}:${marker.longitude}:${marker.isOnline}:${marker.status ?? ''}`,
+    )
+    .join('|');
 }

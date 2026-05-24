@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: -52,
+    top: -60,
     zIndex: 20,
     elevation: 12,
     alignItems: 'center',
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   avatarScrollSpacer: {
-    height: 6,
+    height: 48,
   },
   ratingBlock: {
     position: 'absolute',

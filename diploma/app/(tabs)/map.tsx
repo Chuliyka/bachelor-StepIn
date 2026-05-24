@@ -18,13 +18,15 @@ import { AppColors } from '@/constants/app-colors';
 import { MapClusterMarker } from '@/components/map/MapClusterMarker';
 import { MapSortFilterBottomSheet } from '@/components/map/MapSortFilterBottomSheet';
 import { MapUserMarker } from '@/components/map/MapUserMarker';
-import { getInterestNameByFilterKey, type MapSortFilterKey } from '@/constants/interests';
+import { parseStatusValue } from '@/constants/statuses';
+import type { MapSortFilterKey } from '@/constants/interests';
 import { MapUserProfileBottomSheet } from '@/components/map/MapUserProfileBottomSheet';
 import type { MapUserFriendRequestStatus } from '@/types/map-user-profile-sheet';
 import { fetchWithAuth } from '@/utils/fetchWithAuth';
 import { buildMapUserProfileSheetFromMarker } from '@/utils/mapUserProfileSheet';
 import { clusterMapMarkers, type MapMarkerCluster } from '@/utils/mapMarkerClustering';
 import { mapMarkersSignature, parseUsersMapResponse, type MapMarkerDto } from '@/utils/mapApi';
+import { markerMatchesStatusFilter } from '@/utils/mapStatusFilter';
 import { openChatWithParticipant } from '@/utils/openChat';
 import { getSession } from '@/utils/session';
 import { useDebouncedValue } from '@/utils/useDebouncedValue';
@@ -41,6 +43,7 @@ type UserMapData = {
   latitude: number;
   longitude: number;
   photoUrl: string | null;
+  status: string | null;
 };
 
 type OnlineUserMarker = MapMarkerDto & {
@@ -68,6 +71,9 @@ function mergeBackendUserIntoMarker(marker: OnlineUserMarker, user: any): Online
   const isOnline = parseBackendBoolean(user?.isOnline);
   const latitude = Number(isOnline ? user?.latitude : user?.lastLatitude ?? user?.latitude);
   const longitude = Number(isOnline ? user?.longitude : user?.lastLongitude ?? user?.longitude);
+  const status =
+    typeof user?.status === 'string' ? user.status : typeof marker.status === 'string' ? marker.status : null;
+  const parsedStatus = parseStatusValue(status);
 
   return {
     ...marker,
@@ -79,8 +85,9 @@ function mergeBackendUserIntoMarker(marker: OnlineUserMarker, user: any): Online
     lastSeenAt: typeof user?.lastSeenAt === 'string' ? user.lastSeenAt : marker.lastSeenAt ?? null,
     birthDate: typeof user?.birthDate === 'string' ? user.birthDate : marker.birthDate ?? null,
     about: typeof user?.about === 'string' ? user.about : marker.about ?? null,
-    statusEmoji: typeof user?.statusEmoji === 'string' ? user.statusEmoji : marker.statusEmoji ?? null,
-    statusBody: typeof user?.statusBody === 'string' ? user.statusBody : marker.statusBody ?? null,
+    status,
+    statusEmoji: typeof user?.statusEmoji === 'string' ? user.statusEmoji : parsedStatus.emoji,
+    statusBody: typeof user?.statusBody === 'string' ? user.statusBody : parsedStatus.label,
     rating: Number.isFinite(Number(user?.rating)) ? Number(user.rating) : marker.rating ?? null,
     meetsCount: Number.isFinite(Number(user?.meetsCount)) ? Number(user.meetsCount) : marker.meetsCount,
     friendsCount: Number.isFinite(Number(user?.friendsCount)) ? Number(user.friendsCount) : marker.friendsCount,
@@ -172,6 +179,7 @@ export default function MapTabScreen() {
       const latitude = Number(data?.latitude);
       const longitude = Number(data?.longitude);
       const photoUrl = typeof data?.photoUrl === 'string' ? data.photoUrl : null;
+      const status = typeof data?.status === 'string' ? data.status : null;
       const userId = Number.isFinite(Number(data?.id)) ? Number(data.id) : null;
 
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -187,7 +195,7 @@ export default function MapTabScreen() {
         return;
       }
 
-      setUserMapData({ id: userId, latitude, longitude, photoUrl });
+      setUserMapData({ id: userId, latitude, longitude, photoUrl, status });
       setFallbackCoords(null);
       setErrorText('');
     } catch (error: any) {
@@ -216,7 +224,14 @@ export default function MapTabScreen() {
         );
       }
 
-      const markers = parseUsersMapResponse(data);
+      const markers = parseUsersMapResponse(data).map((marker) => {
+        const parsedStatus = parseStatusValue(marker.status);
+        return {
+          ...marker,
+          statusEmoji: parsedStatus.emoji,
+          statusBody: parsedStatus.label,
+        };
+      });
       const signature = mapMarkersSignature(markers);
       if (signature !== markersSignatureRef.current) {
         markersSignatureRef.current = signature;
@@ -250,30 +265,34 @@ export default function MapTabScreen() {
   }, [fallbackCoords, userMapData]);
 
   const allVisibleMarkers = useMemo(() => {
-    const interestFilterName = getInterestNameByFilterKey(mapSortFilterKey);
+    const currentUserId = userMapData?.id ?? null;
+
     const markers = onlineUsers.filter((marker) => {
-      if (!interestFilterName) return true;
-      const interests = marker.interests ?? [];
-      return interests.some(({ interest }) => interest.name === interestFilterName);
+      if (currentUserId !== null && marker.id === currentUserId) return true;
+      return markerMatchesStatusFilter(marker.status, mapSortFilterKey);
     });
 
-    if (markerCoords && !markers.some((m) => m.id === userMapData?.id)) {
+    if (markerCoords && !markers.some((m) => m.id === currentUserId || m.id === -1)) {
+      const parsedSelfStatus = parseStatusValue(userMapData?.status);
       markers.push({
-        id: -1,
+        id: currentUserId ?? -1,
         latitude: markerCoords.latitude,
         longitude: markerCoords.longitude,
         photoUrl: userMapData?.photoUrl ?? null,
         name: 'Ви',
+        status: userMapData?.status ?? null,
         isOnline: true,
         lastSeenAt: null,
         isFriend: false,
         friendRequestStatus: 'none',
         relationshipLabel: 'Ви',
+        statusEmoji: parsedSelfStatus.emoji,
+        statusBody: parsedSelfStatus.label,
       });
     }
 
     return markers;
-  }, [mapSortFilterKey, markerCoords, onlineUsers, userMapData?.id, userMapData?.photoUrl]);
+  }, [mapSortFilterKey, markerCoords, onlineUsers, userMapData]);
 
   const initialRegion = useMemo(() => {
     if (markerCoords) {
@@ -566,7 +585,7 @@ export default function MapTabScreen() {
             pressed && styles.mapTopFabPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Сортування за статусами та інтересами"
+          accessibilityLabel="Фільтр за поточним статусом"
         >
           <Ionicons name="options-outline" size={24} color={mapTopFabIconColor} />
         </Pressable>

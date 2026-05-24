@@ -1,12 +1,26 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { router } from 'expo-router';
-import { type ReactNode, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BASE_URL } from '@/constants/api';
+import type { LocationAccuracyOption } from '@/constants/locationPrivacy';
+import { fetchWithAuth } from '@/utils/fetchWithAuth';
+import { getSession } from '@/utils/session';
 
 type VisibilityOption = 'all' | 'friends' | 'custom';
-type AccuracyOption = 'precise' | 'approximate';
+type AccuracyOption = LocationAccuracyOption;
 
 const PURPLE = '#9D8DF1';
 const NAVY = '#19395A';
@@ -16,9 +30,96 @@ const ROW_TITLE = '#173753';
 const BORDER = '#E4E9F0';
 
 export default function LocationSettingsScreen() {
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<VisibilityOption>('all');
   const [accuracy, setAccuracy] = useState<AccuracyOption>('approximate');
   const [shareOnMap, setShareOnMap] = useState(true);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [savingAccuracy, setSavingAccuracy] = useState(false);
+
+  useEffect(() => {
+    getSession()
+      .then((stored) => setSessionKey(stored))
+      .catch(() => setSessionKey(null));
+  }, []);
+
+  useEffect(() => {
+    if (!sessionKey) {
+      setLoadingSettings(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      setLoadingSettings(true);
+      try {
+        const response = await fetchWithAuth(
+          `${BASE_URL}/users/by-phone?phoneNumber=${encodeURIComponent(sessionKey)}`,
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof (data as { message?: string }).message === 'string'
+              ? (data as { message: string }).message
+              : 'Не вдалося завантажити налаштування',
+          );
+        }
+
+        const nextAccuracy = (data as { locationAccuracy?: string }).locationAccuracy;
+        if (!cancelled && (nextAccuracy === 'precise' || nextAccuracy === 'approximate')) {
+          setAccuracy(nextAccuracy);
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          const message = e instanceof Error ? e.message : 'Не вдалося завантажити налаштування';
+          Alert.alert('Помилка', message);
+        }
+      } finally {
+        if (!cancelled) setLoadingSettings(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionKey]);
+
+  const saveAccuracy = useCallback(
+    async (next: AccuracyOption) => {
+      if (!sessionKey || savingAccuracy) return;
+
+      const previous = accuracy;
+      setAccuracy(next);
+      setSavingAccuracy(true);
+
+      try {
+        const response = await fetchWithAuth(
+          `${BASE_URL}/users/by-phone?phoneNumber=${encodeURIComponent(sessionKey)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationAccuracy: next }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof (data as { message?: string }).message === 'string'
+              ? (data as { message: string }).message
+              : 'Не вдалося зберегти налаштування',
+          );
+        }
+      } catch (e: unknown) {
+        setAccuracy(previous);
+        const message = e instanceof Error ? e.message : 'Не вдалося зберегти налаштування';
+        Alert.alert('Помилка', message);
+      } finally {
+        setSavingAccuracy(false);
+      }
+    },
+    [accuracy, savingAccuracy, sessionKey],
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
@@ -75,24 +176,32 @@ export default function LocationSettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Точність локації</Text>
-          <Text style={styles.sectionHint}>Як точно визначати ваше місцезнаходження?</Text>
+          <Text style={styles.sectionHint}>
+            При «Приблизній» інші бачать позицію з планарним шумом Лапласа (кругове розмиття).
+          </Text>
 
-          <VisibilityRow
-            selected={accuracy === 'precise'}
-            onPress={() => setAccuracy('precise')}
-            icon={<Ionicons name="location-outline" size={22} color={PURPLE} />}
-            title="Точна"
-            subtitle="Інші користувачі бачать тебе з точністю до кількох метрів"
-          />
-          <RowDivider />
-          <VisibilityRow
-            selected={accuracy === 'approximate'}
-            onPress={() => setAccuracy('approximate')}
-            icon={<Ionicons name="globe-outline" size={22} color={PURPLE} />}
-            title="Приблизна"
-            subtitle="Інші користувачі бачать лише загальне місцезнаходження"
-          />
-          <RowDivider />
+          {loadingSettings ? (
+            <ActivityIndicator style={styles.accuracyLoader} color={PURPLE} />
+          ) : (
+            <>
+              <VisibilityRow
+                selected={accuracy === 'precise'}
+                onPress={() => void saveAccuracy('precise')}
+                icon={<Ionicons name="location-outline" size={22} color={PURPLE} />}
+                title="Точна"
+                subtitle="Інші користувачі бачать тебе з точністю до кількох метрів"
+              />
+              <RowDivider />
+              <VisibilityRow
+                selected={accuracy === 'approximate'}
+                onPress={() => void saveAccuracy('approximate')}
+                icon={<Ionicons name="globe-outline" size={22} color={PURPLE} />}
+                title="Приблизна"
+                subtitle="Планарний механізм Лапласа — приблизна позиція на мапі"
+              />
+              <RowDivider />
+            </>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -261,5 +370,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: ROW_TITLE,
+  },
+  accuracyLoader: {
+    marginVertical: 20,
   },
 });

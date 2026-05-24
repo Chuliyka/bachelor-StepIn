@@ -1,4 +1,5 @@
 import { BASE_URL } from '@/constants/api';
+import { formatMessagePreviewText, parseLocationMessage } from '@/utils/chatLocationMessage';
 import type { ApiChatMessage, ApiConversation, ApiChatUser } from '@/types/api-chat';
 import type { ChatPreviewDto } from '@/types/chats';
 import type { ChatMessageDto, ChatThreadHeaderDto, ChatThreadListEntry } from '@/types/chat-thread';
@@ -56,7 +57,7 @@ export function mapConversationToPreview(
     participantId: peer.id,
     participantName: peer.name?.trim() || 'Користувач',
     participantAvatarUrl: photoUrlToAbsolute(peer.photoUrl),
-    lastMessageText: last?.text ?? '',
+    lastMessageText: last?.text ? formatMessagePreviewText(last.text) : '',
     lastMessageAt: conversation.lastMessageAt ?? last?.createdAt ?? conversation.updatedAt,
     unreadCount: conversation._count?.messages ?? 0,
     activityStatusEmoji: activityEmojiFromStatus(peer.status),
@@ -105,12 +106,14 @@ function formatTimestampLabel(iso: string): string {
 }
 
 export function mapApiMessageToDto(message: ApiChatMessage, currentUserId: number): ChatMessageDto {
+  const location = parseLocationMessage(message.text);
   return {
     id: String(message.id),
     conversationId: String(message.conversationId),
     authorParticipantId: String(message.senderId),
     body: message.text,
     createdAt: message.createdAt,
+    ...(location && { location }),
   };
 }
 

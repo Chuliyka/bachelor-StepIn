@@ -17,6 +17,7 @@ export interface ChatMessageDto {
   body: string;
   createdAt: string;
   showAvatar?: boolean;
+  location?: { latitude: number; longitude: number };
 }
 
 export type ChatThreadListEntry =
