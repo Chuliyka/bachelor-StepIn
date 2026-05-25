@@ -10,6 +10,7 @@ import {
   resolveLocationAccuracy,
 } from '../location/location-privacy';
 import { PrismaService } from '../prisma/prisma.service';
+import { MatchingService } from '../ai/matching.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import Twilio from 'twilio';
@@ -25,6 +26,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly locationGeo: LocationGeoService,
     private readonly authService: AuthService,
+    private readonly matching: MatchingService,
   ) {}
 
   async googleAuth(idToken: string) {
@@ -249,6 +251,7 @@ export class UsersService {
     });
 
     this.logger.log(`Interests saved | userId=${user.id} | count=${interests.length}`);
+    void this.matching.refreshUserEmbedding(user.id);
 
     return { success: true, saved: interests.map((i) => i.name) };
   }
@@ -312,10 +315,20 @@ export class UsersService {
       patch.mapLongitude = mapCoordinates.mapLongitude;
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: patch,
     });
+
+    if (data.status !== undefined) {
+      void this.matching.refreshUserEmbedding(user.id);
+    }
+
+    if (coordinatesTouched) {
+      void this.matching.checkNearbyMatches(user.id);
+    }
+
+    return updated;
   }
 
   async updateStatusByPhone(phoneNumber: string, isOnline: boolean) {

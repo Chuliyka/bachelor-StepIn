@@ -41,6 +41,8 @@ model User {
   isEmailVerified     Boolean   @default(false)
   isPhoneVerified     Boolean   @default(false)
   hashedRefreshToken  String?
+  embedding           Json?
+  embeddingUpdatedAt  DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -63,6 +65,7 @@ enum FriendshipStatus {
 enum NotificationType {
   FRIEND_REQUEST
   FRIEND_REQUEST_ACCEPTED
+  MATCH_SUGGESTION
 }
 
 model Notification {
@@ -159,6 +162,18 @@ model UserInterest {
   interest   Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
 
   @@id([userId, interestId])
+}
+
+model MatchSuggestion {
+  id         Int      @id @default(autoincrement())
+  pairKey    String   @unique
+  userAId    Int
+  userBId    Int
+  similarity Float
+  notifiedAt DateTime @default(now())
+
+  @@index([userAId])
+  @@index([userBId])
 }
 
 model PhoneVerificationCode {

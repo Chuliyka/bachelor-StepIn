@@ -78,6 +78,30 @@ export class NotificationsService {
     return response;
   }
 
+  async createMatchSuggestionNotification(params: {
+    recipientId: number;
+    actorId: number;
+    actorName?: string | null;
+    similarity: number;
+  }) {
+    const actorName = params.actorName?.trim() || 'Користувач';
+    const notification = await this.prisma.notification.create({
+      data: {
+        recipientId: params.recipientId,
+        actorId: params.actorId,
+        type: NotificationType.MATCH_SUGGESTION,
+        title: `${actorName} поруч із вами — ${params.similarity}% збіг інтересів`,
+        body: 'Можливо, варто познайомитись?',
+        metadata: { actorId: params.actorId, similarity: params.similarity },
+      },
+      include: this.notificationInclude(),
+    });
+
+    const response = this.toResponse(notification);
+    this.notificationsGateway.emitNotificationToUser(params.recipientId, response);
+    return response;
+  }
+
   async createFriendRequestAcceptedNotification(params: {
     recipientId: number;
     actorId: number;

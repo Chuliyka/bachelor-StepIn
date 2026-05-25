@@ -91,6 +91,14 @@ export default function NotificationsScreen() {
   }, [decrementUnreadCount]);
 
   const handleNotificationPress = useCallback((item: NotificationItem) => {
+    if (item.type === 'MATCH_SUGGESTION') {
+      const actorId = Number(item.metadata?.actorId);
+      if (Number.isInteger(actorId) && actorId > 0) {
+        router.push({ pathname: '/chat/[conversationId]', params: { conversationId: '', participantId: actorId } });
+      }
+      return;
+    }
+
     if (item.type !== 'FRIEND_REQUEST') return;
 
     const friendshipId = getFriendshipIdFromNotification(item);
@@ -134,8 +142,8 @@ export default function NotificationsScreen() {
   const renderItem = useCallback(
     ({ item }: SectionListRenderItemInfo<NotificationItem, NotificationListSection>) => (
       <TouchableOpacity
-        style={[styles.row, item.type === 'FRIEND_REQUEST' && styles.pressableRow]}
-        activeOpacity={item.type === 'FRIEND_REQUEST' ? 0.65 : 1}
+        style={[styles.row, (item.type === 'FRIEND_REQUEST' || item.type === 'MATCH_SUGGESTION') && styles.pressableRow]}
+        activeOpacity={(item.type === 'FRIEND_REQUEST' || item.type === 'MATCH_SUGGESTION') ? 0.65 : 1}
         onPress={() => handleNotificationPress(item)}
       >
         <View style={styles.rowMain}>

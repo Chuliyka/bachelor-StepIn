@@ -135,6 +135,24 @@ export class LocationGeoService implements OnModuleInit {
     `;
   }
 
+  async findNearbyUserIds(
+    excludeUserId: number,
+    latitude: number,
+    longitude: number,
+    radiusMeters: number,
+  ): Promise<number[]> {
+    this.assertReady();
+    const center = this.makePointSql(longitude, latitude);
+    const rows = await this.prisma.$queryRaw<{ id: number }[]>`
+      SELECT u."id"
+      FROM "User" u
+      WHERE u."id" <> ${excludeUserId}
+        AND u."location" IS NOT NULL
+        AND ST_DWithin(u."location", ${center}, ${radiusMeters})
+    `;
+    return rows.map((r) => r.id);
+  }
+
   private assertReady() {
     if (!this.postgisReady) {
       throw new Error('PostGIS is not initialized. Start postgis/postgis and run prisma migrate deploy.');

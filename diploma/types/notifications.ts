@@ -1,6 +1,7 @@
 export type NotificationKnownType =
   | 'FRIEND_REQUEST'
   | 'FRIEND_REQUEST_ACCEPTED'
+  | 'MATCH_SUGGESTION'
   | 'status_interaction'
   | 'proximity_friend'
   | 'location_suggestion'
