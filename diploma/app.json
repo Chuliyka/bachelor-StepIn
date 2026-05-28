@@ -2,7 +2,7 @@
   "expo": {
     "name": "diploma",
     "slug": "diploma",
-    "owner": "yurimytko",
+    "owner": "chuliyka",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/StepIn.png",
@@ -11,7 +11,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yurimytko.diploma",
+      "bundleIdentifier": "com.chuliyka.diploma",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Дозволь доступ до геолокації, щоб показувати людей поруч.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Дозволь доступ до геолокації, щоб оновлювати позицію та показувати людей поруч."
@@ -26,7 +26,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.yurimytko.diploma",
+      "package": "com.chuliyka.diploma",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
