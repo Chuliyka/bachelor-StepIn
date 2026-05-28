@@ -110,6 +110,8 @@ export default function MapTabScreen() {
   const { phoneNumber } = useLocalSearchParams<{ phoneNumber?: string }>();
   const mapRef = useRef<MapView | null>(null);
   const didAnimateToUserRef = useRef(false);
+  const hasLoadedCoordsRef = useRef(false);
+  const coordsSessionRef = useRef<string | null>(null);
   const markersSignatureRef = useRef('');
   const [sessionKey, setSessionKey] = useState<string | null>(null);
   const [coordsLoading, setCoordsLoading] = useState(true);
@@ -171,8 +173,11 @@ export default function MapTabScreen() {
       return;
     }
 
-    try {
+    const showCoordsSpinner = !hasLoadedCoordsRef.current;
+    if (showCoordsSpinner) {
       setCoordsLoading(true);
+    }
+    try {
       const response = await fetchWithAuth(
         `${BASE_URL}/users/by-phone?phoneNumber=${encodeURIComponent(sessionKey)}`,
       );
@@ -215,7 +220,10 @@ export default function MapTabScreen() {
         setErrorText(error?.message ?? 'Помилка завантаження координат');
       }
     } finally {
-      setCoordsLoading(false);
+      hasLoadedCoordsRef.current = true;
+      if (showCoordsSpinner) {
+        setCoordsLoading(false);
+      }
     }
   }, [loadDeviceLocation, sessionKey]);
 
@@ -265,9 +273,23 @@ export default function MapTabScreen() {
   }, [fallbackCoords, mapRegion, userMapData]);
 
   useEffect(() => {
-    if (!sessionKey) return;
+    if (!sessionKey) {
+      setCoordsLoading(false);
+      return;
+    }
+
+    if (coordsSessionRef.current !== sessionKey) {
+      coordsSessionRef.current = sessionKey;
+      hasLoadedCoordsRef.current = false;
+      setCoordsLoading(true);
+    }
 
     void loadCoordinates();
+  }, [loadCoordinates, sessionKey]);
+
+  useEffect(() => {
+    if (!sessionKey) return;
+
     void loadMapMarkers();
 
     const timer = setInterval(() => {
@@ -277,7 +299,7 @@ export default function MapTabScreen() {
     return () => {
       clearInterval(timer);
     };
-  }, [loadCoordinates, loadMapMarkers, sessionKey]);
+  }, [loadMapMarkers, sessionKey]);
 
   const markerCoords = useMemo(() => {
     if (userMapData) {
