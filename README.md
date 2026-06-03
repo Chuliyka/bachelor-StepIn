@@ -105,16 +105,9 @@ npx expo start
 
 ---
 
-## Налаштування Google Sign-In
+## Протестувати роботоздатність застосунку можна, вказавши цей номер телефону як ваш особистий: 984329090. Важливе уточнення, номер телефону в формі авторизації/реєстрації потрібно вводити без коду країни(+380)!
 
-1. Проєкт у [Google Cloud Console](https://console.cloud.google.com/).
-2. OAuth consent screen.
-3. OAuth-клієнти:
-   - **Web** — Expo
-   - **iOS** — bundle ID: `com.chuliyka.diploma` (`diploma/app.json`)
-4. Скопіюйте client ID у `diploma/.env`.
 
----
 
 ## Усунення несправностей
 
