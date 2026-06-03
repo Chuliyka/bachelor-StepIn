@@ -557,12 +557,13 @@ export default function MapTabScreen() {
   const handleMarkerPress = useCallback(
     (marker: OnlineUserMarker) => {
       if (marker.id === -1) return;
-      if (isMockUser(marker.id)) return;
       if (marker.id === userMapData?.id) return;
 
       setSortFilterSheetVisible(false);
       setSelectedUser(marker);
       setSheetVisible(true);
+
+      if (isMockUser(marker.id)) return;
 
       fetchWithAuth(`${BASE_URL}/users/${marker.id}`)
         .then(async (response) => {

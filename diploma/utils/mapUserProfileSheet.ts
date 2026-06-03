@@ -70,7 +70,11 @@ export function buildMapUserProfileSheetFromMarker(
   }
 
   const photoUri =
-    marker.photoUrl && marker.photoUrl.length > 0 ? `${photoBaseUrl}${marker.photoUrl}` : null;
+    marker.photoUrl && marker.photoUrl.length > 0
+      ? marker.photoUrl.startsWith('http')
+        ? marker.photoUrl
+        : `${photoBaseUrl}${marker.photoUrl}`
+      : null;
 
   const statusLine = marker.statusBody?.trim() || '';
   const about = marker.about?.trim() || '';
