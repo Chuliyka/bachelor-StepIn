@@ -32,6 +32,7 @@ import {
   type MapMarkerDto,
 } from '@/utils/mapApi';
 import { markerMatchesStatusFilter } from '@/utils/mapStatusFilter';
+import { generateMockMapUsers, isMockUser, type MockMapUser } from '@/utils/mockMapUsers';
 import { openChatWithParticipant } from '@/utils/openChat';
 import { getSession } from '@/utils/session';
 import { useDebouncedValue } from '@/utils/useDebouncedValue';
@@ -113,6 +114,7 @@ export default function MapTabScreen() {
   const hasLoadedCoordsRef = useRef(false);
   const coordsSessionRef = useRef<string | null>(null);
   const markersSignatureRef = useRef('');
+  const mockUsersRef = useRef<MockMapUser[] | null>(null);
   const [sessionKey, setSessionKey] = useState<string | null>(null);
   const [coordsLoading, setCoordsLoading] = useState(true);
   const [userMapData, setUserMapData] = useState<UserMapData | null>(null);
@@ -335,6 +337,13 @@ export default function MapTabScreen() {
       });
     }
 
+    if (markerCoords) {
+      if (!mockUsersRef.current) {
+        mockUsersRef.current = generateMockMapUsers(markerCoords.latitude, markerCoords.longitude);
+      }
+      markers.push(...mockUsersRef.current);
+    }
+
     return markers;
   }, [mapSortFilterKey, markerCoords, onlineUsers, userMapData]);
 
@@ -418,14 +427,13 @@ export default function MapTabScreen() {
   const markerPhotoUris = useMemo(() => {
     const uris = new Map<number, string | null>();
     for (const marker of allVisibleMarkers) {
-      uris.set(
-        marker.id,
-        marker.photoUrl
-          ? marker.photoUrl.startsWith('http')
-            ? marker.photoUrl
-            : `${BASE_URL}${marker.photoUrl}`
-          : null,
-      );
+      if (!marker.photoUrl) {
+        uris.set(marker.id, null);
+      } else if (marker.photoUrl.startsWith('http')) {
+        uris.set(marker.id, marker.photoUrl);
+      } else {
+        uris.set(marker.id, `${BASE_URL}${marker.photoUrl}`);
+      }
     }
     return uris;
   }, [allVisibleMarkers]);
@@ -549,6 +557,7 @@ export default function MapTabScreen() {
   const handleMarkerPress = useCallback(
     (marker: OnlineUserMarker) => {
       if (marker.id === -1) return;
+      if (isMockUser(marker.id)) return;
       if (marker.id === userMapData?.id) return;
 
       setSortFilterSheetVisible(false);
