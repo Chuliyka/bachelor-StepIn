@@ -341,7 +341,7 @@ export default function MapTabScreen() {
       if (!mockUsersRef.current) {
         mockUsersRef.current = generateMockMapUsers(markerCoords.latitude, markerCoords.longitude);
       }
-      markers.push(...mockUsersRef.current);
+      markers.push(...mockUsersRef.current.filter((m) => markerMatchesStatusFilter(m.status, mapSortFilterKey)));
     }
 
     return markers;
@@ -585,7 +585,9 @@ export default function MapTabScreen() {
 
   const handleMarkerPressById = useCallback(
     (markerId: number) => {
-      const marker = onlineUsers.find((user) => user.id === markerId);
+      const marker =
+        onlineUsers.find((user) => user.id === markerId) ??
+        mockUsersRef.current?.find((user) => user.id === markerId);
       if (marker) handleMarkerPress(marker);
     },
     [handleMarkerPress, onlineUsers],

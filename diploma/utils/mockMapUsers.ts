@@ -11,6 +11,8 @@ const MOCK_USERS = [
     rating: 4.8,
     meetsCount: 12,
     friendsCount: 34,
+    statusEmoji: '☕️',
+    statusBody: 'По каві?',
     interests: [
       { interest: { id: 1, name: 'Подорожі' } },
       { interest: { id: 2, name: 'Спорт' } },
@@ -29,6 +31,8 @@ const MOCK_USERS = [
     rating: 4.5,
     meetsCount: 7,
     friendsCount: 18,
+    statusEmoji: '📸',
+    statusBody: 'Шукаю модель для фото',
     interests: [
       { interest: { id: 4, name: 'Музика' } },
       { interest: { id: 5, name: 'Фотографія' } },
@@ -53,14 +57,14 @@ export type MockMapUser = {
   photoUrl: string;
   latitude: number;
   longitude: number;
-  status: null;
+  status: string;
   isOnline: true;
   lastSeenAt: null;
   isFriend: boolean;
   friendRequestStatus: 'none';
   relationshipLabel: string;
-  statusEmoji: null;
-  statusBody: null;
+  statusEmoji: string;
+  statusBody: string;
   birthDate: string;
   about: string;
   rating: number;
@@ -83,11 +87,9 @@ export function generateMockMapUsers(centerLat: number, centerLng: number): Mock
       interests: [...user.interests],
       latitude: centerLat + latOffset,
       longitude: centerLng + lngOffset / lngScale,
-      status: null,
+      status: `${user.statusEmoji} ${user.statusBody}`,
       isOnline: true as const,
       lastSeenAt: null,
-      statusEmoji: null,
-      statusBody: null,
     };
   });
 }
